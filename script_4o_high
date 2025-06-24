@@ -1,10 +1,8 @@
 /**
- * Office Script: synchronize dates from “GFE” to “Main” and flag changes.
- *
- * • Starts at row 3 (0-based index 2).
- * • Copies FA/Disco dates into Main cols E/F.
- * • Writes “Y” in Main cols G/H if dates differ.
- * • All variables, loop indices, and function parameters have explicit types.
+ * Copy dates from «GFE» → «Main» and flag changes in G/H.
+ * • Works from row 3 (0-based index 2).
+ * • Marks "Y" when First Available or Discontinue dates differ.
+ * • All variables and functions have explicit types.
  */
 
 // Normalize any cell value to a primitive (string or number) for comparison
@@ -28,17 +26,15 @@ function datesEqualValue(a: ExcelScript.CellValue, b: ExcelScript.CellValue): bo
   return normA === normB;
 }
 
-// Main entry point
 function main(workbook: ExcelScript.Workbook): void {
-  // Starting row (0-based index, so row 3 in Excel)
   const START_ROW: number = 2;
 
-  // Worksheets
-  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main") as ExcelScript.Worksheet;
-  const wsGFE: ExcelScript.Worksheet = workbook.getWorksheet("GFE") as ExcelScript.Worksheet;
+  // Worksheets (assert non-null)
+  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
+  const wsGFE: ExcelScript.Worksheet = workbook.getWorksheet("GFE")!;
 
-  // Read GFE data
-  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange() as ExcelScript.Range;
+  // Read GFE data (assert non-null)
+  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
   const gfeData: ExcelScript.CellValue[][] = gfeRange.getValues() as ExcelScript.CellValue[][];
 
   // Lookup table for GFE dates
@@ -58,11 +54,10 @@ function main(workbook: ExcelScript.Workbook): void {
     };
   }
 
-  // Read Main data
-  const mainRange: ExcelScript.Range = wsMain.getUsedRange() as ExcelScript.Range;
+  // Read Main data (assert non-null)
+  const mainRange: ExcelScript.Range = wsMain.getUsedRange()!;
   const mainData: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
 
-  // Iterate Main rows and update
   for (let rowIndex: number = START_ROW; rowIndex < mainData.length; rowIndex++) {
     const materialKey: string = String(mainData[rowIndex][0]);
     const seasonKey: string = String(mainData[rowIndex][1]);
@@ -72,23 +67,22 @@ function main(workbook: ExcelScript.Workbook): void {
     const key: string = `${materialKey}|${seasonKey}`;
     const dates: DatesPair | undefined = lookup[key];
     if (!dates) {
-      continue; // no matching key in GFE
+      continue;
     }
 
-    // Copy dates into Main cols E (index 4) and F (index 5)
+    // Copy dates to E/F
     mainData[rowIndex][4] = dates.fa;
     mainData[rowIndex][5] = dates.disco;
 
-    // Flag First Available change in G (index 6)
+    // Flag changes
     if (!datesEqualValue(mainData[rowIndex][2], dates.fa)) {
       mainData[rowIndex][6] = "Y";
     }
-    // Flag Discontinue change in H (index 7)
     if (!datesEqualValue(mainData[rowIndex][3], dates.disco)) {
       mainData[rowIndex][7] = "Y";
     }
   }
 
-  // Write updated values back to Main sheet
+  // Write back
   mainRange.setValues(mainData);
 }
