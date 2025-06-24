@@ -55,10 +55,14 @@ function main(workbook: ExcelScript.Workbook): void {
   const lookup: Record<string, DatesPair> = {};
 
   for (let i: number = START_ROW; i < gfeData.length; i++) {
-    const matKey: ExcelScript.CellValue    = gfeData[i][0];
-    const seaKey: ExcelScript.CellValue    = gfeData[i][1];
+    const rawMat: ExcelScript.CellValue = gfeData[i][0];
+    const rawSea: ExcelScript.CellValue = gfeData[i][1];
+    const matKey: string = String(rawMat);
+    const seaKey: string = String(rawSea);
     if (matKey === "" || seaKey === "") continue;
-    const key: string = `${matKey}|${seaKey}`;
+    const key: string = matKey + "|" + seaKey;
+    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
+  }|${seaKey}`;
     lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
   }
 
@@ -66,10 +70,27 @@ function main(workbook: ExcelScript.Workbook): void {
   const mainData: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
 
   for (let j: number = START_ROW; j < mainData.length; j++) {
-    const matVal: ExcelScript.CellValue = mainData[j][0];
-    const seaVal: ExcelScript.CellValue = mainData[j][1];
-    if (matVal === "" || seaVal === "") continue;
-    const key: string = `${matVal}|${seaVal}`;
+    const rawMat: ExcelScript.CellValue = mainData[j][0];
+    const rawSea: ExcelScript.CellValue = mainData[j][1];
+    const matStr: string = String(rawMat);
+    const seaStr: string = String(rawSea);
+    if (matStr === "" || seaStr === "") continue;
+    const key: string = matStr + "|" + seaStr;
+    const dp: DatesPair | undefined = lookup[key];
+    if (!dp) continue;
+
+    // Copy dates to cols E (4) and F (5)
+    mainData[j][4] = dp.fa;
+    mainData[j][5] = dp.disco;
+
+    // Flag changes in G (6) and H (7)
+    if (!datesEqual(mainData[j][2], dp.fa)) {
+      mainData[j][6] = "Y";
+    }
+    if (!datesEqual(mainData[j][3], dp.disco)) {
+      mainData[j][7] = "Y";
+    }
+  }|${seaVal}`;
     const dp: DatesPair | undefined = lookup[key];
     if (!dp) continue;
 
