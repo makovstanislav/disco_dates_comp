@@ -2,142 +2,186 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Full pipeline:
- * 1. normalizeAB: columns A (Material) & B (Season)
- * 2. normalizeCD: columns C-D (date parsing & formatting)
- * 3. populateEF: copy from GFE into E-F with INACTIVE logic
- * 4. flagGH: compare and flag changes in G-H
+ * Full Office Script Pipeline:
+ * 1. normalizeAB: normalize A-B on Main
+ * 2. normalizeCD: format C-D on Main
+ * 3. populateEF: copy from GFE into E-F
+ * 4. flagGH: flag changes in G-H
  */
 function main(workbook: ExcelScript.Workbook): void {
-  const SHEET = "Main";
-  const GFE_SHEET = "GFE";
-  const START_ROW = 2;
-  const MAIN_COL_COUNT = 8; // up to H
+  const SHEET_NAME: string = "Main";
+  const GFE_SHEET: string = "GFE";
+  const START_ROW: number = 2;
 
-  const ws = workbook.getWorksheet(SHEET);
-  const wsGfe = workbook.getWorksheet(GFE_SHEET);
-  if (!ws || !wsGfe) return;
+  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet(SHEET_NAME)!;
+  const wsGfe: ExcelScript.Worksheet = workbook.getWorksheet(GFE_SHEET)!;
 
-  normalizeAB(ws, START_ROW);
-  normalizeCD(ws, START_ROW);
-  populateEF(ws, wsGfe, START_ROW);
-  flagGH(ws, START_ROW);
+  normalizeAB(wsMain, START_ROW);
+  normalizeCD(wsMain, START_ROW);
+  populateEF(wsMain, wsGfe, START_ROW);
+  flagGH(wsMain, START_ROW);
 }
 
-// 1. Normalize A (Material) & B (Season)
+// 1. Normalize columns A & B
 function normalizeAB(ws: ExcelScript.Worksheet, startRow: number): void {
-  const used = ws.getUsedRange(); if (!used) return;
-  const rows = used.getRowCount();
-  const range = ws.getRangeByIndexes(startRow, 0, rows - startRow, 2);
-  const vals = range.getValues() as CellVal[][];
-  for (let i = 0; i < vals.length; i++) {
-    // Material
-    let m = vals[i][0];
-    if (typeof m === 'string') {
-      const t = m.replace(/^'/,'').trim();
-      const n = Number(t);
-      m = !isNaN(n) ? n : t;
+  const usedRange: ExcelScript.Range = ws.getUsedRange()!;
+  const totalRows: number = usedRange.getRowCount();
+  const rng: ExcelScript.Range = ws.getRangeByIndexes(startRow, 0, totalRows - startRow, 2);
+  const vals: CellVal[][] = rng.getValues() as CellVal[][];
+
+  for (let i: number = 0; i < vals.length; i++) {
+    // Column A
+    let matVal: CellVal = vals[i][0];
+    if (typeof matVal === 'string') {
+      const txt: string = matVal.replace(/^'/, '').trim();
+      const num: number = Number(txt);
+      matVal = !isNaN(num) ? num : txt;
     }
-    // Season
-    let s = vals[i][1];
-    if (typeof s === 'string') s = s.trim().toUpperCase();
-    vals[i][0] = m;
-    vals[i][1] = s;
+    // Column B
+    let seaVal: CellVal = vals[i][1];
+    if (typeof seaVal === 'string') {
+      seaVal = seaVal.trim().toUpperCase();
+    }
+    vals[i][0] = matVal;
+    vals[i][1] = seaVal;
   }
-  range.setValues(vals);
+
+  rng.setValues(vals);
 }
 
-// 2. Normalize & format C-D
+// 2. Normalize & format columns C-D
 function normalizeCD(ws: ExcelScript.Worksheet, startRow: number): void {
-  const used = ws.getUsedRange(); if (!used) return;
-  const rows = used.getRowCount();
-  const range = ws.getRangeByIndexes(startRow, 2, rows - startRow, 2);
-  const vals = range.getValues() as CellVal[][];
+  const usedRange: ExcelScript.Range = ws.getUsedRange()!;
+  const totalRows: number = usedRange.getRowCount();
+  const rng: ExcelScript.Range = ws.getRangeByIndexes(startRow, 2, totalRows - startRow, 2);
+  const vals: CellVal[][] = rng.getValues() as CellVal[][];
   const out: string[][] = [];
-  for (const row of vals) {
-    out.push(row.map(v => formatCellDate(v)));
-  }
-  const fmt = Array(out.length).fill(["@","@"]); range.setNumberFormatLocal(fmt);
-  range.setValues(out);
-}
-function formatCellDate(v: CellVal): string {
-  const d = parseDate(v);
-  return d ? formatDate(d) : "";
-}
-function parseDate(v: CellVal): Date | null {
-  if (v instanceof Date) return v;
-  if (typeof v === 'number') return excelSerialToDate(v);
-  if (typeof v === 'string' && v.trim()) {
-    const d = new Date(v.trim());
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
-}
-function excelSerialToDate(n: number): Date {
-  const d = n > 60 ? n - 1 : n;
-  const e = new Date(Date.UTC(1899,11,31));
-  return new Date(e.getTime() + d*86400000);
-}
-function formatDate(d: Date): string {
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
-  return `${mm}/${dd}/${d.getFullYear()}`;
-}
 
-// 3. Populate E-F from GFE
-function populateEF(ws: ExcelScript.Worksheet, wsGfe: ExcelScript.Worksheet, startRow: number): void {
-  const gfeUsed = wsGfe.getUsedRange(); if (!gfeUsed) return;
-  const gfe = gfeUsed.getValues() as CellVal[][];
-  const lookup: Record<string,{fa:CellVal,disco:CellVal,status:string}> = {};
-  for (let i = 1; i < gfe.length; i++) {
-    const key = normalizeKey(gfe[i][0])+'|'+normalizeKey(gfe[i][1]);
-    lookup[key] = {fa:gfe[i][2], disco:gfe[i][3], status:String(gfe[i][4]).trim().toUpperCase()};
-  }
-  const used = ws.getUsedRange(); if (!used) return;
-  const rows = used.getRowCount();
-  const out: string[][] = [];
-  for (let r = startRow; r < rows; r++) {
-    const m = normalizeKey(ws.getCell(r,0).getValue() as CellVal);
-    const s = normalizeKey(ws.getCell(r,1).getValue() as CellVal);
-    const e = lookup[m+'|'+s];
-    let fa="",di="";
-    if (e) {
-      if (e.status!=='ACTIVE') fa=di='INACTIVE'; else {
-        const d1=parseDate(e.fa), d2=parseDate(e.disco);
-        if (d1) fa=formatDate(d1);
-        if (d2) di=formatDate(d2);
+  for (let i: number = 0; i < vals.length; i++) {
+    const row: CellVal[] = vals[i];
+    const formattedRow: string[] = ["", ""];
+    for (let j: number = 0; j < 2; j++) {
+      const v: CellVal = row[j];
+      let dt: Date | null = null;
+      if (v instanceof Date) {
+        dt = v;
+      } else if (typeof v === 'number') {
+        dt = excelSerialToDate(v);
+      } else if (typeof v === 'string' && v.trim() !== "") {
+        const parsed: Date = new Date(v.trim());
+        if (!isNaN(parsed.getTime())) dt = parsed;
+      }
+      if (dt) {
+        formattedRow[j] = formatDate(dt);
       }
     }
-    out.push([fa,di]);
+    out.push(formattedRow);
   }
-  const range = ws.getRangeByIndexes(startRow,4,out.length,2);
-  const fmt = Array(out.length).fill(["@","@"]); range.setNumberFormatLocal(fmt);
-  range.setValues(out);
+
+  const fmt: string[][] = Array(out.length).fill(["@", "@"]);
+  rng.setNumberFormatLocal(fmt);
+  rng.setValues(out);
 }
 
-// 4. Flag G-H
-function flagGH(ws: ExcelScript.Worksheet, startRow: number): void {
-  const used = ws.getUsedRange(); if (!used) return;
-  const rows = used.getRowCount();
-  const out: string[][] = [];
-  for (let r = startRow; r < rows; r++) {
-    const c = toMs(ws.getCell(r,2).getValue() as CellVal);
-    const e = toMs(ws.getCell(r,4).getValue() as CellVal);
-    const d = toMs(ws.getCell(r,3).getValue() as CellVal);
-    const f = toMs(ws.getCell(r,5).getValue() as CellVal);
-    out.push([c!==e?'Y':'', d!==f?'Y':'']);
+function excelSerialToDate(serial: number): Date {
+  const offset: number = serial > 60 ? serial - 1 : serial;
+  const epoch: Date = new Date(Date.UTC(1899, 11, 31));
+  return new Date(epoch.getTime() + offset * 86400000);
+}
+
+function formatDate(d: Date): string {
+  const mm: string = String(d.getMonth() + 1).padStart(2, '0');
+  const dd: string = String(d.getDate()).padStart(2, '0');
+  const yyyy: number = d.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
+}
+
+// 3. Populate columns E-F from GFE with INACTIVE logic
+function populateEF(
+  wsMain: ExcelScript.Worksheet,
+  wsGfe: ExcelScript.Worksheet,
+  startRow: number
+): void {
+  const gfeUsed: ExcelScript.Range = wsGfe.getUsedRange()!;
+  const gfeData: CellVal[][] = gfeUsed.getValues() as CellVal[][];
+  const lookup: Record<string, { fa: CellVal; disco: CellVal; status: string }> = {};
+
+  for (let i: number = 1; i < gfeData.length; i++) {
+    const matKey: string = normalizeKey(gfeData[i][0]);
+    const seaKey: string = normalizeKey(gfeData[i][1]);
+    const statusVal: string = String(gfeData[i][4]).trim().toUpperCase();
+    lookup[`${matKey}|${seaKey}`] = {
+      fa: gfeData[i][2],
+      disco: gfeData[i][3],
+      status: statusVal
+    };
   }
-  const range = ws.getRangeByIndexes(startRow,6,out.length,2);
-  range.setValues(out);
+
+  const used: ExcelScript.Range = wsMain.getUsedRange()!;
+  const totalRows: number = used.getRowCount();
+  const out: string[][] = [];
+
+  for (let r: number = startRow; r < totalRows; r++) {
+    const matCell: CellVal = wsMain.getCell(r, 0).getValue() as CellVal;
+    const seaCell: CellVal = wsMain.getCell(r, 1).getValue() as CellVal;
+    const key: string = `${normalizeKey(matCell)}|${normalizeKey(seaCell)}`;
+    const entry = lookup[key];
+    let faStr: string = "";
+    let discoStr: string = "";
+    if (entry) {
+      if (entry.status !== "ACTIVE") {
+        faStr = "INACTIVE";
+        discoStr = "INACTIVE";
+      } else {
+        const d1: Date | null = parseDate(entry.fa);
+        const d2: Date | null = parseDate(entry.disco);
+        if (d1) faStr = formatDate(d1);
+        if (d2) discoStr = formatDate(d2);
+      }
+    }
+    out.push([faStr, discoStr]);
+  }
+
+  const rng: ExcelScript.Range = wsMain.getRangeByIndexes(startRow, 4, out.length, 2);
+  const fmt: string[][] = Array(out.length).fill(["@", "@"]); rng.setNumberFormatLocal(fmt);
+  rng.setValues(out);
 }
 
 function normalizeKey(val: CellVal): string {
   return String(val).trim().toLowerCase();
 }
-function toMs(v: CellVal): number|"" {
-  if (v==null||v==="") return "";
-  if (v instanceof Date) return v.getTime();
-  if (typeof v==='number') return v;
-  const d = new Date(String(v));
-  return isNaN(d.getTime())?"":d.getTime();
+
+// 4. Flag changes in columns G-H
+function flagGH(ws: ExcelScript.Worksheet, startRow: number): void {
+  const used: ExcelScript.Range = ws.getUsedRange()!;
+  const totalRows: number = used.getRowCount();
+  const out: string[][] = [];
+
+  for (let r: number = startRow; r < totalRows; r++) {
+    const cVal: CellVal = ws.getCell(r, 2).getValue() as CellVal;
+    const eVal: CellVal = ws.getCell(r, 4).getValue() as CellVal;
+    const dVal: CellVal = ws.getCell(r, 3).getValue() as CellVal;
+    const fVal: CellVal = ws.getCell(r, 5).getValue() as CellVal;
+
+    const msC: number | "" = toMs(cVal);
+    const msE: number | "" = toMs(eVal);
+    const msD: number | "" = toMs(dVal);
+    const msF: number | "" = toMs(fVal);
+
+    out.push([
+      msC !== msE ? "Y" : "",
+      msD !== msF ? "Y" : ""
+    ]);
+  }
+
+  const rng: ExcelScript.Range = ws.getRangeByIndexes(startRow, 6, out.length, 2);
+  rng.setValues(out);
+}
+
+function toMs(val: CellVal): number | "" {
+  if (val == null || val === "") return "";
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'number') return val;
+  const parsed: Date = new Date(String(val));
+  return isNaN(parsed.getTime()) ? "" : parsed.getTime();
 }
