@@ -2,54 +2,55 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Populate Main cols E–F from GFE sheet based on Material+Season.
- * • Reads Main starting row 3 (0-based index 2).
- * • Normalizes keys by trimming strings.
- * • Builds lookup from GFE cols A–D.
+ * Office Script: Populate Main cols E–F from GFE, using nested search to avoid key mismatches.
+ * • Reads Main from row 3 (0-based index 2).
+ * • Builds GFE data array.
+ * • For each Main row, searches GFE rows for matching Material+Season.
  * • Copies GFE First Available (col C) → Main col E.
  * • Copies GFE Discontinue    (col D) → Main col F.
  */
 function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;
-  const MAIN_TOTAL_COLS: number = 6;  // A–F
+  const MAIN_COLS: number = 6; // A–F
 
   const wsMain = workbook.getWorksheet("Main")!;
   const wsGFE  = workbook.getWorksheet("GFE")!;
 
-  // Read and build lookup from GFE
+  // Read GFE data
   const gfeRange = wsGFE.getUsedRange()!;
-  const gfeVals = gfeRange.getValues() as CellVal[][];
-  const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
-  for (let i = START_ROW; i < gfeVals.length; i++) {
-    const matRaw = gfeVals[i][0];
-    const seaRaw = gfeVals[i][1];
-    const matKey = String(matRaw).trim();
-    const seaKey = String(seaRaw).trim();
-    if (!matKey || !seaKey) continue;
-    lookup[`${matKey}|${seaKey}`] = { fa: gfeVals[i][2], disco: gfeVals[i][3] };
-  }
+  const gfeData = gfeRange.getValues() as CellVal[][];
 
-  // Read Main A–F
+  // Read Main full A–F
   const rowCount = wsMain.getUsedRange()!.getRowCount();
-  const mainRange = wsMain.getRangeByIndexes(0, 0, rowCount, MAIN_TOTAL_COLS);
-  const mainVals = mainRange.getValues() as CellVal[][];
+  const mainRange = wsMain.getRangeByIndexes(0, 0, rowCount, MAIN_COLS);
+  const mainData = mainRange.getValues() as CellVal[][];
 
-  // Populate E-F
-  for (let r = START_ROW; r < mainVals.length; r++) {
-    const matRaw = mainVals[r][0];
-    const seaRaw = mainVals[r][1];
-    const matKey = String(matRaw).trim();
-    const seaKey = String(seaRaw).trim();
+  // Process Main rows
+  for (let r = START_ROW; r < mainData.length; r++) {
+    const matMain = mainData[r][0];
+    const seaMain = mainData[r][1];
+    const matKey = String(matMain).trim();
+    const seaKey = String(seaMain).trim();
     if (!matKey || !seaKey) continue;
-    const entry = lookup[`${matKey}|${seaKey}`];
-    if (entry) {
-      mainVals[r][4] = entry.fa;
-      mainVals[r][5] = entry.disco;
+
+    // Search GFE for matching row
+    let foundFA: CellVal | undefined;
+    let foundDisco: CellVal | undefined;
+    for (let g = START_ROW; g < gfeData.length; g++) {
+      const matG = gfeData[g][0];
+      const seaG = gfeData[g][1];
+      if (String(matG).trim() === matKey && String(seaG).trim() === seaKey) {
+        foundFA = gfeData[g][2];
+        foundDisco = gfeData[g][3];
+        break;
+      }
     }
+    if (foundFA !== undefined) mainData[r][4] = foundFA;
+    if (foundDisco !== undefined) mainData[r][5] = foundDisco;
   }
 
   // Write back only E-F
-  const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainVals.length - START_ROW, 2);
-  const outValues = mainVals.slice(START_ROW).map(row => [row[4], row[5]]);
+  const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
+  const outValues = mainData.slice(START_ROW).map(row => [row[4], row[5]]);
   outRange.setValues(outValues);
 }
