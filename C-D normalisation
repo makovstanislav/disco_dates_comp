@@ -71,7 +71,12 @@ function main(workbook: ExcelScript.Workbook): void {
     out.push(rowOut);
   }
 
-  // Write formatted strings back to C-D
-  range.setNumberFormatLocal([["@","@"];][0]);
+    // Write formatted strings back to C-D
+  // Prepare a matrix of text format ("@") for each cell
+  const formatMatrix: string[][] = [];
+  for (let i = 0; i < rowsToProcess; i++) {
+    formatMatrix.push(["@", "@"]);  // two columns C and D
+  }
+  range.setNumberFormatLocal(formatMatrix);
   range.setValues(out);
 }
