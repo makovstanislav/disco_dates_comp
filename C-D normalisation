@@ -1,0 +1,61 @@
+/**
+ * Office Script: Normalize columns C (First Available Date) and D (Discontinue Date) on sheet "Main".
+ * • Starts from row 3 (zero-based index 2) to last used row.
+ * • Column C and D: 
+ *    - If string, attempts to parse as date; invalid strings become empty.
+ *    - If number, treats as Excel serial date and converts to JS Date.
+ *    - Leaves Date objects as-is.
+ */
+function main(workbook: ExcelScript.Workbook): void {
+  const SHEET_NAME = "Main";
+  const START_ROW = 2;     // row 3
+  const COL_START = 2;      // column C index
+  const COL_COUNT = 2;      // C and D
+
+  // Excel serial to JS Date converter (handles Excel leap year bug)
+  function excelSerialToDate(serial: number): Date {
+    const offset = serial > 60 ? serial - 1 : serial;
+    const epoch = new Date(Date.UTC(1899, 11, 31));
+    return new Date(epoch.getTime() + offset * 86400000);
+  }
+
+  // Get sheet and range
+  const ws = workbook.getWorksheet(SHEET_NAME);
+  if (!ws) return;
+  const used = ws.getUsedRange();
+  if (!used) return;
+
+  const totalRows = used.getRowCount();
+  const rowsToProcess = totalRows - START_ROW;
+  if (rowsToProcess <= 0) return;
+
+  // Read raw values from columns C-D
+  const range = ws.getRangeByIndexes(START_ROW, COL_START, rowsToProcess, COL_COUNT);
+  const values = range.getValues() as (string | number | boolean | Date)[][];
+
+  // Normalize each
+  for (let i = 0; i < values.length; i++) {
+    // First Available Date
+    let fa = values[i][0];
+    if (typeof fa === "string") {
+      const d = new Date(fa);
+      fa = isNaN(d.getTime()) ? "" : d;
+    } else if (typeof fa === "number") {
+      fa = excelSerialToDate(fa);
+    }
+    values[i][0] = fa;
+
+    // Discontinue Date
+    let disco = values[i][1];
+    if (typeof disco === "string") {
+      const d2 = new Date(disco);
+      disco = isNaN(d2.getTime()) ? "" : d2;
+    } else if (typeof disco === "number") {
+      disco = excelSerialToDate(disco);
+    }
+    values[i][1] = disco;
+  }
+
+  // Write back normalized dates
+  range.setValues(values);
+}
