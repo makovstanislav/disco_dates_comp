@@ -10,54 +10,53 @@
 function excelSerialToMillis(serial: number): number {
   const offsetDays: number = serial > 60 ? serial - 1 : serial;
   const baseDate: Date = new Date(Date.UTC(1899, 11, 31));
-  const resultMillis: number = baseDate.getTime() + offsetDays * 86400000;
+  const resultMillis: number = baseDate.getTime() + offsetDays * 24 * 60 * 60 * 1000;
   return resultMillis;
 }
 
 // Convert any cell value to milliseconds (undefined if blank/non-date)
 function toMillis(value: ExcelScript.CellValue): number | undefined {
-  if (value === null || value === undefined || value === "") {
-    const emptyUndefined: undefined = undefined;
-    return emptyUndefined;
+  const v: ExcelScript.CellValue = value;
+  if (v === null || v === undefined || v === "") {
+    return undefined;
   }
-  if (typeof value === "number") {
-    const serialNum: number = value;
+  if (typeof v === "number") {
+    const serialNum: number = v;
     const msFromSerial: number = excelSerialToMillis(serialNum);
     return msFromSerial;
   }
-  if (value instanceof Date) {
-    const dateObj: Date = value;
+  if (v instanceof Date) {
+    const dateObj: Date = v;
     const msFromDate: number = dateObj.getTime();
     return msFromDate;
   }
-  if (typeof value === "string") {
-    const strVal: string = value;
+  if (typeof v === "string") {
+    const strVal: string = v;
     const parsedDate: Date = new Date(strVal);
     const parsedMillis: number = parsedDate.getTime();
-    if (isNaN(parsedMillis)) {
-      const undef2: undefined = undefined;
-      return undef2;
+    const isValid: boolean = !isNaN(parsedMillis);
+    if (!isValid) {
+      return undefined;
     }
     return parsedMillis;
   }
-  const undef3: undefined = undefined;
-  return undef3;
+  return undefined;
 }
 
 // Compare two cell values as dates or blanks
 function datesEqual(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
   const msA: number | undefined = toMillis(a);
   const msB: number | undefined = toMillis(b);
-  if (msA === undefined && msB === undefined) {
-    const equalBlanks: boolean = true;
-    return equalBlanks;
+  const bothUndefined: boolean = msA === undefined && msB === undefined;
+  if (bothUndefined) {
+    return true;
   }
-  if (msA !== undefined && msB !== undefined) {
-    const equalDates: boolean = msA === msB;
-    return equalDates;
+  const bothDefined: boolean = msA !== undefined && msB !== undefined;
+  if (bothDefined) {
+    const isEqual: boolean = msA === msB;
+    return isEqual;
   }
-  const notEqual: boolean = false;
-  return notEqual;
+  return false;
 }
 
 // Main function
@@ -74,12 +73,13 @@ function main(workbook: ExcelScript.Workbook): void {
   // Build lookup of material|season → dates
   interface DatesPair { faDate: ExcelScript.CellValue; discoDate: ExcelScript.CellValue; }
   const dateLookup: Record<string, DatesPair> = {};
-  for (let rowIndex: number = START_ROW; rowIndex < gfeValues.length; rowIndex = rowIndex + 1) {
+  for (let rowIndex: number = START_ROW; rowIndex < gfeValues.length; rowIndex++) {
     const materialCell: ExcelScript.CellValue = gfeValues[rowIndex][0];
     const seasonCell: ExcelScript.CellValue = gfeValues[rowIndex][1];
     const materialKey: string = String(materialCell);
     const seasonKey: string = String(seasonCell);
-    if (materialKey === "" || seasonKey === "") {
+    const skipRow: boolean = materialKey === "" || seasonKey === "";
+    if (skipRow) {
       continue;
     }
     const lookupKey: string = materialKey + "|" + seasonKey;
@@ -93,17 +93,19 @@ function main(workbook: ExcelScript.Workbook): void {
   const mainValues: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
 
   // Update Main rows
-  for (let rowIndex: number = START_ROW; rowIndex < mainValues.length; rowIndex = rowIndex + 1) {
+  for (let rowIndex: number = START_ROW; rowIndex < mainValues.length; rowIndex++) {
     const materialCell: ExcelScript.CellValue = mainValues[rowIndex][0];
     const seasonCell: ExcelScript.CellValue = mainValues[rowIndex][1];
     const materialKey: string = String(materialCell);
     const seasonKey: string = String(seasonCell);
-    if (materialKey === "" || seasonKey === "") {
+    const skipMain: boolean = materialKey === "" || seasonKey === "";
+    if (skipMain) {
       continue;
     }
     const lookupKey: string = materialKey + "|" + seasonKey;
     const datesPair: DatesPair | undefined = dateLookup[lookupKey];
-    if (datesPair === undefined) {
+    const hasPair: boolean = datesPair !== undefined;
+    if (!hasPair) {
       continue;
     }
 
