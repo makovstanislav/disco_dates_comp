@@ -96,6 +96,19 @@ function formatDate(d: Date): string {
   return `${mm}/${dd}/${yyyy}`;
 }
 
+// Helper: parse raw CellVal date to JS Date or null
+function parseDate(raw: CellVal): Date | null {
+  if (raw instanceof Date) return raw;
+  if (typeof raw === 'number') return excelSerialToDate(raw);
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    if (!s) return null;
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 // 3. Populate columns E-F from GFE with INACTIVE logic
 function populateEF(
   wsMain: ExcelScript.Worksheet,
