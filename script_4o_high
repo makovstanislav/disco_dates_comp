@@ -2,10 +2,10 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Populate Main cols E–F from GFE, using nested search to avoid key mismatches.
+ * Office Script: Populate Main cols E–F from GFE, ignoring case for Season.
  * • Reads Main from row 3 (0-based index 2).
- * • Builds GFE data array.
- * • For each Main row, searches GFE rows for matching Material+Season.
+ * • Normalizes Material (trim) and Season (trim + toLowerCase).
+ * • Builds lookup from GFE cols A–D.
  * • Copies GFE First Available (col C) → Main col E.
  * • Copies GFE Discontinue    (col D) → Main col F.
  */
@@ -13,47 +13,45 @@ function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;
   const MAIN_COLS: number = 6; // A–F
 
-  const wsMain = workbook.getWorksheet("Main")!;
-  const wsGFE  = workbook.getWorksheet("GFE")!;
+  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
+  const wsGFE:  ExcelScript.Worksheet = workbook.getWorksheet("GFE")!;
 
-  // Read GFE data
-  const gfeRange = wsGFE.getUsedRange()!;
-  const gfeData = gfeRange.getValues() as CellVal[][];
+  // Read GFE data (cols A–D)
+  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
+  const gfeData: CellVal[][] = gfeRange.getValues() as CellVal[][];
 
-  // Read Main full A–F
-  const rowCount = wsMain.getUsedRange()!.getRowCount();
-  const mainRange = wsMain.getRangeByIndexes(0, 0, rowCount, MAIN_COLS);
-  const mainData = mainRange.getValues() as CellVal[][];
-
-  // Helper to normalize Key values (numbers or strings)
-function normalizeKey(val: CellVal): string {
-  if (val === undefined || val === null) return "";
-  if (typeof val === 'number') return String(val);
-  const s = String(val).replace(/^'/, '').trim();
-  // if numeric string, return without leading zeros
-  const num = Number(s);
-  return !isNaN(num) ? String(num) : s;
-}
-
-// Build lookup map from GFE for faster access with normalized keys
-const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
-for (let g = START_ROW; g < gfeData.length; g++) {
-  const key = normalizeKey(gfeData[g][0]) + '|' + normalizeKey(gfeData[g][1]);
-  if (key) lookup[key] = { fa: gfeData[g][2], disco: gfeData[g][3] };
-}
-
-// Process Main rows
-for (let r = START_ROW; r < mainData.length; r++) {
-  const key = normalizeKey(mainData[r][0]) + '|' + normalizeKey(mainData[r][1]);
-  const entry = lookup[key];
-  if (entry) {
-    mainData[r][4] = entry.fa;
-    mainData[r][5] = entry.disco;
+  // Build lookup map with lowercased season
+  const lookup: Record<string, { fa: CellVal; disco: CellVal }> = {};
+  for (let i: number = START_ROW; i < gfeData.length; i++) {
+    const matRaw: CellVal = gfeData[i][0];
+    const seaRaw: CellVal = gfeData[i][1];
+    const matKey: string = String(matRaw).trim();
+    const seaKey: string = String(seaRaw).trim().toLowerCase();
+    if (!matKey || !seaKey) continue;
+    lookup[`${matKey}|${seaKey}`] = { fa: gfeData[i][2], disco: gfeData[i][3] };
   }
-}
 
-// Write back only E-F
-const outRange: ExcelScript.Range = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
-const outValues: CellVal[][] = mainData.slice(START_ROW).map((row: CellVal[]) => [row[4], row[5]]);
-outRange.setValues(outValues);
+  // Read Main data (cols A–F)
+  const totalRows: number = wsMain.getUsedRange()!.getRowCount();
+  const mainRange: ExcelScript.Range = wsMain.getRangeByIndexes(0, 0, totalRows, MAIN_COLS);
+  const mainData: CellVal[][] = mainRange.getValues() as CellVal[][];
+
+  // Populate E (index 4) & F (index 5)
+  for (let r: number = START_ROW; r < mainData.length; r++) {
+    const matRaw: CellVal = mainData[r][0];
+    const seaRaw: CellVal = mainData[r][1];
+    const matKey: string = String(matRaw).trim();
+    const seaKey: string = String(seaRaw).trim().toLowerCase();
+    if (!matKey || !seaKey) continue;
+    const entry = lookup[`${matKey}|${seaKey}`];
+    if (entry) {
+      mainData[r][4] = entry.fa;
+      mainData[r][5] = entry.disco;
+    }
+  }
+
+  // Write back only E–F
+  const writeRange: ExcelScript.Range = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
+  const writeValues: CellVal[][] = mainData.slice(START_ROW).map((row: CellVal[]) => [row[4], row[5]]);
+  writeRange.setValues(writeValues);
 }
