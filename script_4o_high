@@ -1,54 +1,45 @@
-// Define strict cell type for inference
-type CellVal = string | number | boolean | Date;
-
 /**
- * Office Script: Populate Main cols E–F from GFE_Clean, ignoring case and normalizing keys.
- * • Reads Main from row 3 (0-based index 2).
- * • Normalizes Material (trim + numeric) and Season (trim + lowercase).
- * • Builds lookup from GFE_Clean cols A–D.
- * • Copies GFE First Available (col C) → Main col E.
- * • Copies GFE Discontinue    (col D) → Main col F.
+ * Office Script: Normalize columns A (Material) and B (Season) on sheet "Main".
+ * • Starts from row 3 (zero-based index 2) down to last used row.
+ * • Column A: removes leading apostrophes, trims, converts numeric strings to numbers.
+ * • Column B: trims and converts to upper-case.
  */
 function main(workbook: ExcelScript.Workbook): void {
-  const START_ROW: number = 2;
-  const MAIN_COLS: number = 6; // A–F
+  const SHEET_NAME: string = "Main";
+  const START_ROW: number = 2; // row 3
+  const COL_MAT: number = 0;   // column A
+  const COL_SEA: number = 1;   // column B
 
-  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-  const wsGFE:  ExcelScript.Worksheet = workbook.getWorksheet("GFE_Clean")!;
+  // Get worksheet and used range
+  const ws = workbook.getWorksheet(SHEET_NAME);
+  if (!ws) return;
+  const used = ws.getUsedRange();
+  if (!used) return;
 
-  // Normalization helper
-  function normalizeKey(val: CellVal): string {
-    const s: string = String(val).replace(/^'/, '').trim();
-    const n: number = Number(s);
-    return !isNaN(n) ? String(n) : s.toLowerCase();
-  }
+  const rowCount = used.getRowCount();
+  const range = ws.getRangeByIndexes(START_ROW, COL_MAT, rowCount - START_ROW, 2);
+  const values = range.getValues() as (string | number | boolean | Date)[][];
 
-  // Build lookup map from GFE_Clean
-  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
-  const gfeData: CellVal[][] = gfeRange.getValues() as CellVal[][];
-  const lookup: Record<string, { fa: CellVal; disco: CellVal }> = {};
-  for (let i = START_ROW; i < gfeData.length; i++) {
-    const key: string = normalizeKey(gfeData[i][0]) + '|' + normalizeKey(gfeData[i][1]);
-    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
-  }
-
-  // Read Main data
-  const totalRows: number = wsMain.getUsedRange()!.getRowCount();
-  const mainRange: ExcelScript.Range = wsMain.getRangeByIndexes(0, 0, totalRows, MAIN_COLS);
-  const mainData: CellVal[][] = mainRange.getValues() as CellVal[][];
-
-  // Populate E-F
-  for (let r = START_ROW; r < mainData.length; r++) {
-    const key: string = normalizeKey(mainData[r][0]) + '|' + normalizeKey(mainData[r][1]);
-    const entry = lookup[key];
-    if (entry) {
-      mainData[r][4] = entry.fa;
-      mainData[r][5] = entry.disco;
+  // Normalize each row
+  for (let i = 0; i < values.length; i++) {
+    // Normalize Material (col A)
+    let mat = values[i][0];
+    if (typeof mat === "string") {
+      // remove leading apostrophe and trim
+      let txt = mat.replace(/^'/, "").trim();
+      const num = Number(txt);
+      mat = !isNaN(num) ? num : txt;
     }
+    values[i][0] = mat;
+
+    // Normalize Season (col B)
+    let sea = values[i][1];
+    if (typeof sea === "string") {
+      sea = sea.trim().toUpperCase();
+    }
+    values[i][1] = sea;
   }
 
-  // Write back only E-F
-  const writeRange: ExcelScript.Range = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
-  const writeValues: CellVal[][] = mainData.slice(START_ROW).map((row: CellVal[]) => [row[4], row[5]]);
-  writeRange.setValues(writeValues);
+  // Write back normalized values
+  range.setValues(values);
 }
