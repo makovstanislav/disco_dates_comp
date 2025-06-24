@@ -2,11 +2,13 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Copy and format First Available/Discontinue dates from GFE to Main (cols E–F).
+ * Office Script: Copy and format First Available/Discontinue dates from GFE to Main (cols E–F),
+ * marking inactive if Material Status ≠ "ACTIVE".
  * • Reads Main rows starting at row 3 (zero-based index 2).
  * • Normalizes Material and Season as keys (trim + lowercase).
- * • Builds lookup from GFE cols A–D.
- * • Parses raw dates, formats as "MM/DD/YYYY" with leading zeros.
+ * • Builds lookup from GFE cols A–E (Material Status in col E).
+ * • If status ≠ "ACTIVE", writes "INACTIVE" in E-F.
+ * • Else parses raw dates, formats as "MM/DD/YYYY" with leading zeros.
  * • Writes formatted strings into Main cols E (4) and F (5).
  */
 function main(workbook: ExcelScript.Workbook): void {
@@ -45,14 +47,18 @@ function main(workbook: ExcelScript.Workbook): void {
   const wsGfe  = workbook.getWorksheet("GFE");
   if (!wsMain || !wsGfe) return;
 
-  // Build lookup from GFE A–D
+  // Build lookup from GFE A–E
   const gfeUsed = wsGfe.getUsedRange();
   if (!gfeUsed) return;
   const gfeData = gfeUsed.getValues() as CellVal[][];
-  const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
+  // lookup entry includes status
+  const lookup: Record<string, {fa: CellVal; disco: CellVal; status: string}> = {};
   for (let i = START_ROW; i < gfeData.length; i++) {
-    const key = normalizeKey(gfeData[i][0]) + '|' + normalizeKey(gfeData[i][1]);
-    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
+    const mat = gfeData[i][0];
+    const sea = gfeData[i][1];
+    const key = normalizeKey(mat) + '|' + normalizeKey(sea);
+    const statusVal = String(gfeData[i][4]).trim().toUpperCase();
+    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3], status: statusVal };
   }
 
   // Read Main
@@ -69,17 +75,22 @@ function main(workbook: ExcelScript.Workbook): void {
     const entry = lookup[key];
     let faStr = "", discoStr = "";
     if (entry) {
-      const faDate = parseDate(entry.fa);
-      const diDate = parseDate(entry.disco);
-      if (faDate) faStr = formatDate(faDate);
-      if (diDate) discoStr = formatDate(diDate);
+      if (entry.status !== "ACTIVE") {
+        faStr = "INACTIVE";
+        discoStr = "INACTIVE";
+      } else {
+        const faDate = parseDate(entry.fa);
+        const diDate = parseDate(entry.disco);
+        if (faDate) faStr = formatDate(faDate);
+        if (diDate) discoStr = formatDate(diDate);
+      }
     }
     out.push([faStr, discoStr]);
   }
 
   // Write back formatted E-F as text
   const writeRange = wsMain.getRangeByIndexes(START_ROW, 4, out.length, 2);
-  // set text format
-  const fmtMatrix: string[][] = Array(out.length).fill(["@","@"]); writeRange.setNumberFormatLocal(fmtMatrix);
+  const fmtMatrix: string[][] = Array(out.length).fill(["@","@"]);
+  writeRange.setNumberFormatLocal(fmtMatrix);
   writeRange.setValues(out);
 }
