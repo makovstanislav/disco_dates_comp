@@ -25,31 +25,37 @@ function main(workbook: ExcelScript.Workbook): void {
   const mainRange = wsMain.getRangeByIndexes(0, 0, rowCount, MAIN_COLS);
   const mainData = mainRange.getValues() as CellVal[][];
 
-  // Process Main rows
-  for (let r = START_ROW; r < mainData.length; r++) {
-    const matMain = mainData[r][0];
-    const seaMain = mainData[r][1];
-    const matKey = String(matMain).trim();
-    const seaKey = String(seaMain).trim();
-    if (!matKey || !seaKey) continue;
+  // Helper to normalize Key values (numbers or strings)
+function normalizeKey(val: CellVal): string {
+  if (val === undefined || val === null) return "";
+  if (typeof val === 'number') return String(val);
+  const s = String(val).replace(/^'/, '').trim();
+  // if numeric string, return without leading zeros
+  const num = Number(s);
+  return !isNaN(num) ? String(num) : s;
+}
 
-    // Search GFE for matching row
-    let foundFA: CellVal | undefined;
-    let foundDisco: CellVal | undefined;
-    for (let g = START_ROW; g < gfeData.length; g++) {
-      const matG = gfeData[g][0];
-      const seaG = gfeData[g][1];
-      if (String(matG).trim() === matKey && String(seaG).trim() === seaKey) {
-        foundFA = gfeData[g][2];
-        foundDisco = gfeData[g][3];
-        break;
-      }
-    }
-    if (foundFA !== undefined) mainData[r][4] = foundFA;
-    if (foundDisco !== undefined) mainData[r][5] = foundDisco;
+// Build lookup map from GFE for faster access with normalized keys
+const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
+for (let g = START_ROW; g < gfeData.length; g++) {
+  const key = normalizeKey(gfeData[g][0]) + '|' + normalizeKey(gfeData[g][1]);
+  if (key) lookup[key] = { fa: gfeData[g][2], disco: gfeData[g][3] };
+}
+
+// Process Main rows
+for (let r = START_ROW; r < mainData.length; r++) {
+  const key = normalizeKey(mainData[r][0]) + '|' + normalizeKey(mainData[r][1]);
+  const entry = lookup[key];
+  if (entry) {
+    mainData[r][4] = entry.fa;
+    mainData[r][5] = entry.disco;
   }
+}
 
-  // Write back only E-F
+// Write back only E-F
+const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
+const outValues = mainData.slice(START_ROW).map(row => [row[4], row[5]]);
+outRange.setValues(outValues);
   const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
   const outValues = mainData.slice(START_ROW).map(row => [row[4], row[5]]);
   outRange.setValues(outValues);
