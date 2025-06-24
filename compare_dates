@@ -2,11 +2,15 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Flag changes in Main col G (isChanged_First).
- * • Reads Main starting at row 3 (zero-based index 2).
- * • Compares First Available (col C) vs GFE – First Available (col E).
- * • If not equal (by value or date), writes "Y" in col G; else leaves blank.
- */
+ * Office Script: Copy and format First Available/Discontinue dates from GFE to Main (cols E–F),
+ * marking inactive if Material Status ≠ "ACTIVE".
+ * • Reads Main rows starting at row 3 (zero-based index 2).
+ * • Normalizes Material and Season as keys (trim + lowercase).
+ * • Builds lookup from GFE cols A–E (Material Status in col E).
+ * • If status ≠ "ACTIVE", writes "INACTIVE" in E-F.
+ * • Else parses raw dates, formats as "MM/DD/YYYY" with leading zeros.
+ * • Writes formatted strings into Main cols E (4) and F (5).
+  */
 function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;   // row 3
   const SHEET = "Main";
@@ -29,19 +33,23 @@ function main(workbook: ExcelScript.Workbook): void {
   if (!used) return;
 
   const rowCount = used.getRowCount();
-  // Read columns C, E
-  const range = ws.getRangeByIndexes(START_ROW, 2, rowCount - START_ROW, 5); // cols C (2) through G (6)
+  // Read columns C-F (indices 2-5) and G-H potential writes
+  const range = ws.getRangeByIndexes(START_ROW, 2, rowCount - START_ROW, 6);
   const vals = range.getValues() as CellVal[][];
 
-  // Prepare output for col G
+  // Prepare output for cols G (index 4) and H (index 5) in this subrange
   const out: string[][] = [];
   for (let i = 0; i < vals.length; i++) {
-    const original = toMillis(vals[i][0]);   // C
-    const fromGFE  = toMillis(vals[i][2]);   // E at offset 2
-    out.push([ original !== fromGFE ? "Y" : "" ]);
+    const originalFA = toMillis(vals[i][0]); // C
+    const fromGFE_FA = toMillis(vals[i][2]); // E
+    const originalD = toMillis(vals[i][1]);  // D
+    const fromGFE_D = toMillis(vals[i][3]);  // F
+    const flagFA = originalFA !== fromGFE_FA ? "Y" : "";
+    const flagD = originalD !== fromGFE_D ? "Y" : "";
+    out.push([flagFA, flagD]);
   }
 
-  // Write back to col G (index 6)
-  const target = ws.getRangeByIndexes(START_ROW, 6, out.length, 1);
-  target.setValues(out);
+  // Write back flags to cols G and H
+  const writeRange = ws.getRangeByIndexes(START_ROW, 6, out.length, 2);
+  writeRange.setValues(out);
 }
