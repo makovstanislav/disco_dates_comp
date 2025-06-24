@@ -1,71 +1,76 @@
 /**
- * Office Script: copy dates from «GFE» → «Main»
- * and mark changes with «Y» (cols G‑H).
+ * Compare dates between «Main» and «GFE» sheets.
  *
- * – Works from row 3 (index 2).
- * – Uses only explicit types; no `any`.
+ * 1. Copies GFE dates (cols C–D) → Main (cols E–F) for each “Material + Season”.
+ * 2. Writes "Y" in G (FA changed) and H (Disco changed) when dates differ.
+ *
+ * All variables are explicitly typed; no implicit `any` remains.
  */
-function main(workbook: ExcelScript.Workbook) {
-  // ---------- Constants ----------
-  const START_ROW = 2; // 0‑based → Excel row 3
-  const mainWs = workbook.getWorksheet("Main");
-  const gfeWs = workbook.getWorksheet("GFE");
-  if (!mainWs || !gfeWs) return;
+function main(workbook: ExcelScript.Workbook): void {
+  // ───────── Constants & worksheets ─────────
+  const START_ROW: number = 2; // 0‑based index (row 3)
+  const wsMain: ExcelScript.Worksheet | undefined = workbook.getWorksheet("Main");
+  const wsGfe:  ExcelScript.Worksheet | undefined = workbook.getWorksheet("GFE");
+  if (!wsMain || !wsGfe) return;
 
-  // ---------- Build lookup from GFE ----------
-  const gfeRange = gfeWs.getUsedRange();
+  // ───────── Read GFE and build lookup ─────────
+  const gfeRange: ExcelScript.Range | undefined = wsGfe.getUsedRange();
   if (!gfeRange) return;
-  const gfeVals = gfeRange.getValues() as ExcelScript.CellValue[][];
+  const gfeVals: ExcelScript.CellValue[][] = gfeRange.getValues() as ExcelScript.CellValue[][];
 
-  interface DatesPair { fa: ExcelScript.CellValue; disco: ExcelScript.CellValue }
-  const lookup = new Map<string, DatesPair>();
+  type DatesPair = { fa: ExcelScript.CellValue; disco: ExcelScript.CellValue };
+  const map: Map<string, DatesPair> = new Map<string, DatesPair>();
 
-  for (let r = START_ROW; r < gfeVals.length; r++) {
-    const mat = gfeVals[r][0] as string | number;
-    const season = gfeVals[r][1] as string | number;
+  for (let r: number = START_ROW; r < gfeVals.length; r++) {
+    const mat: ExcelScript.CellValue = gfeVals[r][0];
+    const season: ExcelScript.CellValue = gfeVals[r][1];
     if (mat === "" || season === "") continue;
-    lookup.set(`${mat}|${season}`, { fa: gfeVals[r][2], disco: gfeVals[r][3] });
+    map.set(`${mat}|${season}`, { fa: gfeVals[r][2], disco: gfeVals[r][3] });
   }
 
-  // ---------- Read Main ----------
-  const mainRange = mainWs.getUsedRange();
+  // ───────── Process Main ─────────
+  const mainRange: ExcelScript.Range | undefined = wsMain.getUsedRange();
   if (!mainRange) return;
-  const mainVals = mainRange.getValues() as ExcelScript.CellValue[][];
+  const mainVals: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
 
-  for (let r = START_ROW; r < mainVals.length; r++) {
-    const mat = mainVals[r][0] as string | number;
-    const season = mainVals[r][1] as string | number;
+  for (let r: number = START_ROW; r < mainVals.length; r++) {
+    const mat: ExcelScript.CellValue = mainVals[r][0];
+    const season: ExcelScript.CellValue = mainVals[r][1];
     if (mat === "" || season === "") continue;
 
-    const key = `${mat}|${season}`;
-    const data: DatesPair | undefined = lookup.get(key);
-    if (!data) continue; // pair not in GFE
+    const key: string = `${mat}|${season}`;
+    const found: DatesPair | undefined = map.get(key);
+    if (!found) continue;
 
-    // Copy dates to E/F
-    mainVals[r][4] = data.fa;
-    mainVals[r][5] = data.disco;
+    // Copy GFE dates to Main E/F
+    mainVals[r][4] = found.fa;
+    mainVals[r][5] = found.disco;
 
-    // Compare and flag
-    if (!sameDate(mainVals[r][2], data.fa)) mainVals[r][6] = "Y";
-    if (!sameDate(mainVals[r][3], data.disco)) mainVals[r][7] = "Y";
+    // Flag changes
+    if (!datesEqual(mainVals[r][2], found.fa))   mainVals[r][6] = "Y";
+    if (!datesEqual(mainVals[r][3], found.disco)) mainVals[r][7] = "Y";
   }
 
-  // ---------- Write back ----------
+  // ───────── Write back to sheet ─────────
   mainRange.setValues(mainVals);
+}
 
-  // ---------- Helpers ----------
-  function sameDate(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
-    if ((a === "" || a === null || a === undefined) && (b === "" || b === null || b === undefined)) return true;
-    return toMillis(a) === toMillis(b);
-  }
+// ===== Helper functions outside main (explicitly typed) =====
 
-  function toMillis(v: ExcelScript.CellValue): number | undefined {
-    if (typeof v === "number") return v; // Excel serial
-    if (v instanceof Date) return v.getTime();
-    if (typeof v === "string") {
-      const d = new Date(v);
-      return isNaN(d.getTime()) ? undefined : d.getTime();
-    }
-    return undefined;
+/** Return true when both cell values represent the same date (or both blank). */
+function datesEqual(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
+  const isBlank = (v: ExcelScript.CellValue): boolean => v === "" || v === null || v === undefined;
+  if (isBlank(a) && isBlank(b)) return true;
+  return toMillis(a) === toMillis(b);
+}
+
+/** Convert CellValue → milliseconds since epoch (or Excel serial as‑is). */
+function toMillis(v: ExcelScript.CellValue): number | undefined {
+  if (typeof v === "number") return v; // Excel serial already numeric
+  if (v instanceof Date)        return v.getTime();
+  if (typeof v === "string") {
+    const dt: Date = new Date(v as string);
+    return isNaN(dt.getTime()) ? undefined : dt.getTime();
   }
+  return undefined;
 }
