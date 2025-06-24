@@ -25,7 +25,10 @@ function main(workbook: ExcelScript.Workbook): void {
   for (let i: number = START_ROW; i < gfeData.length; i++) {
     const matRaw: CellVal = gfeData[i][0];
     const seaRaw: CellVal = gfeData[i][1];
-    const matKey: string = String(matRaw).trim();
+    // Normalize material: trim and coerce numeric
+const rawMatStr: string = String(matRaw).trim();
+const matNum: number = Number(rawMatStr);
+const matKey: string = !isNaN(matNum) ? String(matNum) : rawMatStr;
     const seaKey: string = String(seaRaw).trim().toLowerCase();
     if (!matKey || !seaKey) continue;
     lookup[`${matKey}|${seaKey}`] = { fa: gfeData[i][2], disco: gfeData[i][3] };
