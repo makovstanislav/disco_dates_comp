@@ -53,10 +53,7 @@ for (let r = START_ROW; r < mainData.length; r++) {
 }
 
 // Write back only E-F
-const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
-const outValues = mainData.slice(START_ROW).map(row => [row[4], row[5]]);
+const outRange: ExcelScript.Range = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
+const outValues: CellVal[][] = mainData.slice(START_ROW).map((row: CellVal[]) => [row[4], row[5]]);
 outRange.setValues(outValues);
-  const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
-  const outValues = mainData.slice(START_ROW).map(row => [row[4], row[5]]);
-  outRange.setValues(outValues);
 }
