@@ -1,75 +1,70 @@
 /**
- * Compare dates between "Main" and "GFE" sheets.
+ * Office Script: copy dates from «GFE» → «Main»
+ * and mark changes with «Y» (cols G‑H).
  *
- *   • Copies dates from GFE → Main (cols E–F, starting row 3).
- *   • Writes "Y" in G/H when dates differ.
- *   • Leaves cells blank if no change or pair not found.
+ * – Works from row 3 (index 2).
+ * – Uses only explicit types; no `any`.
  */
 function main(workbook: ExcelScript.Workbook) {
-  const MAIN = "Main";
-  const GFE = "GFE";
-  const START_ROW = 2; // 0‑based → row 3
-
-  const mainWs = workbook.getWorksheet(MAIN);
-  const gfeWs = workbook.getWorksheet(GFE);
+  // ---------- Constants ----------
+  const START_ROW = 2; // 0‑based → Excel row 3
+  const mainWs = workbook.getWorksheet("Main");
+  const gfeWs = workbook.getWorksheet("GFE");
+  if (!mainWs || !gfeWs) return;
 
   // ---------- Build lookup from GFE ----------
   const gfeRange = gfeWs.getUsedRange();
-  if (!gfeRange) return; // empty sheet
+  if (!gfeRange) return;
+  const gfeVals = gfeRange.getValues() as ExcelScript.CellValue[][];
 
-  const gfeValues = gfeRange.getValues() as ExcelScript.CellValue[][];
-  const gfeMap = new Map<string, [ExcelScript.CellValue, ExcelScript.CellValue]>();
+  interface DatesPair { fa: ExcelScript.CellValue; disco: ExcelScript.CellValue }
+  const lookup = new Map<string, DatesPair>();
 
-  for (let r = START_ROW; r < gfeValues.length; r++) {
-    const mat = gfeValues[r][0];
-    const season = gfeValues[r][1];
-    if (!mat || !season) continue;
-    gfeMap.set(`${mat}|${season}`, [gfeValues[r][2], gfeValues[r][3]]);
+  for (let r = START_ROW; r < gfeVals.length; r++) {
+    const mat = gfeVals[r][0] as string | number;
+    const season = gfeVals[r][1] as string | number;
+    if (mat === "" || season === "") continue;
+    lookup.set(`${mat}|${season}`, { fa: gfeVals[r][2], disco: gfeVals[r][3] });
   }
 
-  // ---------- Process rows in Main ----------
+  // ---------- Read Main ----------
   const mainRange = mainWs.getUsedRange();
   if (!mainRange) return;
+  const mainVals = mainRange.getValues() as ExcelScript.CellValue[][];
 
-  const mainValues = mainRange.getValues() as ExcelScript.CellValue[][];
-  const rowCount = mainValues.length;
+  for (let r = START_ROW; r < mainVals.length; r++) {
+    const mat = mainVals[r][0] as string | number;
+    const season = mainVals[r][1] as string | number;
+    if (mat === "" || season === "") continue;
 
-  for (let r = START_ROW; r < rowCount; r++) {
-    const mat = mainValues[r][0];
-    const season = mainValues[r][1];
-    if (!mat || !season) continue;
+    const key = `${mat}|${season}`;
+    const data: DatesPair | undefined = lookup.get(key);
+    if (!data) continue; // pair not in GFE
 
-    const pair = gfeMap.get(`${mat}|${season}`);
-    if (!pair) continue; // not found
-
-    const [gfeFA, gfeDisco] = pair;
-
-    // Copy dates to E (4) & F (5)
-    mainValues[r][4] = gfeFA;
-    mainValues[r][5] = gfeDisco;
+    // Copy dates to E/F
+    mainVals[r][4] = data.fa;
+    mainVals[r][5] = data.disco;
 
     // Compare and flag
-    if (!datesEqual(mainValues[r][2], gfeFA)) mainValues[r][6] = "Y";
-    if (!datesEqual(mainValues[r][3], gfeDisco)) mainValues[r][7] = "Y";
+    if (!sameDate(mainVals[r][2], data.fa)) mainVals[r][6] = "Y";
+    if (!sameDate(mainVals[r][3], data.disco)) mainVals[r][7] = "Y";
   }
 
   // ---------- Write back ----------
-  mainRange.setValues(mainValues);
+  mainRange.setValues(mainVals);
 
   // ---------- Helpers ----------
-  function datesEqual(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
-    if ((a === "" || a === undefined || a === null) && (b === "" || b === undefined || b === null)) {
-      return true;
-    }
+  function sameDate(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
+    if ((a === "" || a === null || a === undefined) && (b === "" || b === null || b === undefined)) return true;
     return toMillis(a) === toMillis(b);
   }
 
   function toMillis(v: ExcelScript.CellValue): number | undefined {
+    if (typeof v === "number") return v; // Excel serial
     if (v instanceof Date) return v.getTime();
-    if (typeof v === "number") return v; // Excel serial number
     if (typeof v === "string") {
       const d = new Date(v);
-      if (!isNaN(d.getTime())) return d.getTime();
+      return isNaN(d.getTime()) ? undefined : d.getTime();
     }
     return undefined;
   }
