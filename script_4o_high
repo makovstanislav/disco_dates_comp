@@ -4,48 +4,52 @@ type CellVal = string | number | boolean | Date;
 /**
  * Office Script: Populate Main cols E–F from GFE sheet based on Material+Season.
  * • Reads Main starting row 3 (0-based index 2).
+ * • Normalizes keys by trimming strings.
  * • Builds lookup from GFE cols A–D.
  * • Copies GFE First Available (col C) → Main col E.
  * • Copies GFE Discontinue    (col D) → Main col F.
  */
 function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;
-  const MAIN_COL_COUNT: number = 6;  // we need columns A–F
+  const MAIN_TOTAL_COLS: number = 6;  // A–F
 
-  // Worksheets
-  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-  const wsGFE:  ExcelScript.Worksheet = workbook.getWorksheet("GFE")!;
+  const wsMain = workbook.getWorksheet("Main")!;
+  const wsGFE  = workbook.getWorksheet("GFE")!;
 
-  // Read GFE data (cols A–D)
-  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
-  const gfeVals: CellVal[][] = gfeRange.getValues() as CellVal[][];
-
-  // Build lookup: "material|season" → [faVal, discoVal]
+  // Read and build lookup from GFE
+  const gfeRange = wsGFE.getUsedRange()!;
+  const gfeVals = gfeRange.getValues() as CellVal[][];
   const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
-  for (let i: number = START_ROW; i < gfeVals.length; i++) {
-    const mat: CellVal = gfeVals[i][0];
-    const sea: CellVal = gfeVals[i][1];
-    if (mat === "" || sea === "") continue;
-    const key: string = `${mat}|${sea}`;
-    lookup[key] = { fa: gfeVals[i][2], disco: gfeVals[i][3] };
+  for (let i = START_ROW; i < gfeVals.length; i++) {
+    const matRaw = gfeVals[i][0];
+    const seaRaw = gfeVals[i][1];
+    const matKey = String(matRaw).trim();
+    const seaKey = String(seaRaw).trim();
+    if (!matKey || !seaKey) continue;
+    lookup[`${matKey}|${seaKey}`] = { fa: gfeVals[i][2], disco: gfeVals[i][3] };
   }
 
-  // Read Main data (cols A–F)
-  const mainRange: ExcelScript.Range = wsMain.getRangeByIndexes(0, 0, wsMain.getUsedRange()!.getRowCount(), MAIN_COL_COUNT);
-  const mainVals: CellVal[][] = mainRange.getValues() as CellVal[][];
+  // Read Main A–F
+  const rowCount = wsMain.getUsedRange()!.getRowCount();
+  const mainRange = wsMain.getRangeByIndexes(0, 0, rowCount, MAIN_TOTAL_COLS);
+  const mainVals = mainRange.getValues() as CellVal[][];
 
-  // Populate cols E (index 4) and F (index 5)
-  for (let r: number = START_ROW; r < mainVals.length; r++) {
-    const matM: CellVal = mainVals[r][0];
-    const seaM: CellVal = mainVals[r][1];
-    if (matM === "" || seaM === "") continue;
-    const key: string = `${matM}|${seaM}`;
-    const entry = lookup[key];
-    if (!entry) continue;
-    mainVals[r][4] = entry.fa;
-    mainVals[r][5] = entry.disco;
+  // Populate E-F
+  for (let r = START_ROW; r < mainVals.length; r++) {
+    const matRaw = mainVals[r][0];
+    const seaRaw = mainVals[r][1];
+    const matKey = String(matRaw).trim();
+    const seaKey = String(seaRaw).trim();
+    if (!matKey || !seaKey) continue;
+    const entry = lookup[`${matKey}|${seaKey}`];
+    if (entry) {
+      mainVals[r][4] = entry.fa;
+      mainVals[r][5] = entry.disco;
+    }
   }
 
-  // Write back E–F updates
-  mainRange.setValues(mainVals);
+  // Write back only E-F
+  const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainVals.length - START_ROW, 2);
+  const outValues = mainVals.slice(START_ROW).map(row => [row[4], row[5]]);
+  outRange.setValues(outValues);
 }
