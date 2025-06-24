@@ -14,7 +14,8 @@ function main(workbook: ExcelScript.Workbook): void {
   const MAIN_COLS: number = 6; // A–F
 
   const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-  const wsGFE:  ExcelScript.Worksheet = workbook.getWorksheet("GFE")!;
+    // Source worksheet: now from GFE_Clean
+  const wsGFE: ExcelScript.Worksheet = workbook.getWorksheet("GFE_Clean")!;
 
   // Read GFE data (cols A–D)
   const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
