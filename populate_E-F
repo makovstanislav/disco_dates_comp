@@ -2,63 +2,84 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Copy First Available and Discontinue dates from GFE to Main (cols E–F).
+ * Office Script: Copy and format First Available/Discontinue dates from GFE to Main (cols E–F).
  * • Reads Main rows starting at row 3 (zero-based index 2).
- * • Normalizes Material and Season (trim + lowercase).
+ * • Normalizes Material and Season as keys (trim + lowercase).
  * • Builds lookup from GFE cols A–D.
- * • Copies GFE C→Main E and GFE D→Main F when keys match.
+ * • Parses raw dates, formats as "MM/DD/YYYY" with leading zeros.
+ * • Writes formatted strings into Main cols E (4) and F (5).
  */
 function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;
   const MAIN_COL_COUNT: number = 6; // A–F
 
-  // Helper: normalize key by trimming and lower-casing
-  const normalizeKey = (val: CellVal): string => String(val).trim().toLowerCase();
+  // Helpers
+  function normalizeKey(val: CellVal): string {
+    return String(val).trim().toLowerCase();
+  }
+  function excelSerialToDate(serial: number): Date {
+    const offset = serial > 60 ? serial - 1 : serial;
+    const epoch = new Date(Date.UTC(1899, 11, 31));
+    return new Date(epoch.getTime() + offset * 86400000);
+  }
+  function parseDate(raw: CellVal): Date | null {
+    if (raw instanceof Date) return raw;
+    if (typeof raw === 'number') return excelSerialToDate(raw);
+    if (typeof raw === 'string') {
+      const s = raw.trim();
+      if (s === '') return null;
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  }
+  function formatDate(d: Date): string {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  }
 
-  // Worksheets
+  // Load worksheets
   const wsMain = workbook.getWorksheet("Main");
   const wsGfe  = workbook.getWorksheet("GFE");
   if (!wsMain || !wsGfe) return;
 
-  // Read GFE used range
+  // Build lookup from GFE A–D
   const gfeUsed = wsGfe.getUsedRange();
   if (!gfeUsed) return;
-  const gfeVals = gfeUsed.getValues() as CellVal[][];
-
-  // Build lookup map
+  const gfeData = gfeUsed.getValues() as CellVal[][];
   const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
-  for (let i = START_ROW; i < gfeVals.length; i++) {
-    const mat = gfeVals[i][0];
-    const sea = gfeVals[i][1];
-    const key = normalizeKey(mat) + '|' + normalizeKey(sea);
-    if (mat !== "" && sea !== "") {
-      lookup[key] = { fa: gfeVals[i][2], disco: gfeVals[i][3] };
-    }
+  for (let i = START_ROW; i < gfeData.length; i++) {
+    const key = normalizeKey(gfeData[i][0]) + '|' + normalizeKey(gfeData[i][1]);
+    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
   }
 
-  // Read Main used range
+  // Read Main
   const mainUsed = wsMain.getUsedRange();
   if (!mainUsed) return;
-  const mainRowCount = mainUsed.getRowCount();
+  const rowCount = mainUsed.getRowCount();
+  const mainRange = wsMain.getRangeByIndexes(0, 0, rowCount, MAIN_COL_COUNT);
+  const mainData = mainRange.getValues() as CellVal[][];
 
-  // Read A–F from Main
-  const mainRange = wsMain.getRangeByIndexes(0, 0, mainRowCount, MAIN_COL_COUNT);
-  const mainVals = mainRange.getValues() as CellVal[][];
-
-  // Copy dates into E-F
-  for (let r = START_ROW; r < mainVals.length; r++) {
-    const matMain = mainVals[r][0];
-    const seaMain = mainVals[r][1];
-    const key = normalizeKey(matMain) + '|' + normalizeKey(seaMain);
+  // Prepare output values for E-F
+  const out: string[][] = [];
+  for (let r = START_ROW; r < mainData.length; r++) {
+    const key = normalizeKey(mainData[r][0]) + '|' + normalizeKey(mainData[r][1]);
     const entry = lookup[key];
+    let faStr = "", discoStr = "";
     if (entry) {
-      mainVals[r][4] = entry.fa;
-      mainVals[r][5] = entry.disco;
+      const faDate = parseDate(entry.fa);
+      const diDate = parseDate(entry.disco);
+      if (faDate) faStr = formatDate(faDate);
+      if (diDate) discoStr = formatDate(diDate);
     }
+    out.push([faStr, discoStr]);
   }
 
-  // Write back only E-F to avoid overwriting entire sheet
-  const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainVals.length - START_ROW, 2);
-  const outVals = mainVals.slice(START_ROW).map(row => [row[4], row[5]]);
-  outRange.setValues(outVals);
+  // Write back formatted E-F as text
+  const writeRange = wsMain.getRangeByIndexes(START_ROW, 4, out.length, 2);
+  // set text format
+  const fmtMatrix: string[][] = Array(out.length).fill(["@","@"]); writeRange.setNumberFormatLocal(fmtMatrix);
+  writeRange.setValues(out);
 }
