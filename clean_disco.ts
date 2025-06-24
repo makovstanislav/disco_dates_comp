@@ -7,6 +7,7 @@ type CellVal = string | number | boolean | Date;
  * • Removes leading apostrophes and trims strings.
  * • Converts numeric strings in Material to numbers.
  * • Parses string dates and Excel serials into Date objects.
+ * • Uses custom CellVal type to satisfy TypeScript inference.
  */
 function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;
@@ -39,16 +40,16 @@ function main(workbook: ExcelScript.Workbook): void {
     // Clean Season
     let seasonVal: CellVal = rawRow[1];
     if (typeof seasonVal === "string") {
-      seasonVal = seasonVal.trim();
+      seasonVal = (seasonVal as string).trim();
     }
 
     // Clean First Available Date
     let faVal: CellVal = rawRow[2];
     if (typeof faVal === "string") {
-      const dt: Date = new Date(faVal);
+      const dt: Date = new Date(faVal as string);
       faVal = isNaN(dt.getTime()) ? "" : dt;
     } else if (typeof faVal === "number") {
-      const offsetDays: number = faVal > 60 ? faVal - 1 : faVal;
+      const offsetDays: number = (faVal as number) > 60 ? (faVal as number) - 1 : (faVal as number);
       const epoch: Date = new Date(Date.UTC(1899, 11, 31));
       faVal = new Date(epoch.getTime() + offsetDays * 86400000);
     }
@@ -56,10 +57,10 @@ function main(workbook: ExcelScript.Workbook): void {
     // Clean Discontinue Date
     let discoVal: CellVal = rawRow[3];
     if (typeof discoVal === "string") {
-      const dt2: Date = new Date(discoVal);
+      const dt2: Date = new Date(discoVal as string);
       discoVal = isNaN(dt2.getTime()) ? "" : dt2;
     } else if (typeof discoVal === "number") {
-      const offset2: number = discoVal > 60 ? discoVal - 1 : discoVal;
+      const offset2: number = (discoVal as number) > 60 ? (discoVal as number) - 1 : (discoVal as number);
       const epoch2: Date = new Date(Date.UTC(1899, 11, 31));
       discoVal = new Date(epoch2.getTime() + offset2 * 86400000);
     }
