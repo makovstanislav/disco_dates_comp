@@ -2,11 +2,12 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Clean data from "Main" columns A-D into "Clean" sheet.
+ * Office Script: Clean data from "Main" columns A-D into "Clean" sheet with formatted dates.
  * • Reads rows starting at row 3 (zero-based index 2).
  * • Removes leading apostrophes and trims strings.
  * • Converts numeric strings in Material to numbers.
- * • Parses string dates and Excel serials into Date objects.
+ * • Parses string dates and Excel serials into JS Date objects.
+ * • Formats dates as "MM/DD/YYYY" strings in output.
  * • Uses custom CellVal type to satisfy TypeScript inference.
  */
 function main(workbook: ExcelScript.Workbook): void {
@@ -25,11 +26,19 @@ function main(workbook: ExcelScript.Workbook): void {
   const sourceRange: ExcelScript.Range = mainWs.getRangeByIndexes(START_ROW, 0, rowsToProcess, COL_COUNT);
   const rawValues: CellVal[][] = sourceRange.getValues() as CellVal[][];
 
+  // Helper to format JS Date to MM/DD/YYYY
+  function formatDate(d: Date): string {
+    const mm: string = String(d.getMonth() + 1).padStart(2, '0');
+    const dd: string = String(d.getDate()).padStart(2, '0');
+    const yyyy: number = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  }
+
   const cleaned: CellVal[][] = [];
   for (let i: number = 0; i < rawValues.length; i++) {
     const rawRow: CellVal[] = rawValues[i];
 
-    // Clean Material Number
+    // Material Number
     let matVal: CellVal = rawRow[0];
     if (typeof matVal === "string") {
       const strVal: string = matVal.replace(/^'/, "").trim();
@@ -37,13 +46,13 @@ function main(workbook: ExcelScript.Workbook): void {
       matVal = isNaN(numVal) ? strVal : numVal;
     }
 
-    // Clean Season
+    // Season
     let seasonVal: CellVal = rawRow[1];
     if (typeof seasonVal === "string") {
       seasonVal = (seasonVal as string).trim();
     }
 
-    // Clean First Available Date
+    // First Available Date
     let faVal: CellVal = rawRow[2];
     if (typeof faVal === "string") {
       const dt: Date = new Date(faVal as string);
@@ -54,7 +63,7 @@ function main(workbook: ExcelScript.Workbook): void {
       faVal = new Date(epoch.getTime() + offsetDays * 86400000);
     }
 
-    // Clean Discontinue Date
+    // Discontinue Date
     let discoVal: CellVal = rawRow[3];
     if (typeof discoVal === "string") {
       const dt2: Date = new Date(discoVal as string);
@@ -65,7 +74,11 @@ function main(workbook: ExcelScript.Workbook): void {
       discoVal = new Date(epoch2.getTime() + offset2 * 86400000);
     }
 
-    cleaned.push([matVal, seasonVal, faVal, discoVal]);
+    // Format dates for output
+    const outFa: string | CellVal = faVal instanceof Date ? formatDate(faVal) : faVal;
+    const outDisco: string | CellVal = discoVal instanceof Date ? formatDate(discoVal) : discoVal;
+
+    cleaned.push([matVal, seasonVal, outFa, outDisco]);
   }
 
   const destRange: ExcelScript.Range = cleanWs.getRangeByIndexes(START_ROW, 0, rowsToProcess, COL_COUNT);
