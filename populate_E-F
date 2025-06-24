@@ -13,48 +13,52 @@ function main(workbook: ExcelScript.Workbook): void {
   const MAIN_COL_COUNT: number = 6; // A–F
 
   // Helper: normalize key by trimming and lower-casing
-  function normalizeKey(val: CellVal): string {
-    return String(val).trim().toLowerCase();
-  }
+  const normalizeKey = (val: CellVal): string => String(val).trim().toLowerCase();
 
   // Worksheets
-  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-  const wsGfe:  ExcelScript.Worksheet = workbook.getWorksheet("GFE")!;
+  const wsMain = workbook.getWorksheet("Main");
+  const wsGfe  = workbook.getWorksheet("GFE");
+  if (!wsMain || !wsGfe) return;
 
-  // Read GFE data (cols A–D)
-  const gfeRange = wsGfe.getRange("A:D");
-  const gfeData = gfeRange.getValues() as CellVal[][];
+  // Read GFE used range
+  const gfeUsed = wsGfe.getUsedRange();
+  if (!gfeUsed) return;
+  const gfeVals = gfeUsed.getValues() as CellVal[][];
 
-  // Build lookup map: "mat|sea" → {fa, disco}
+  // Build lookup map
   const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
-  for (let i = START_ROW; i < gfeData.length; i++) {
-    const mat = gfeData[i][0];
-    const sea = gfeData[i][1];
+  for (let i = START_ROW; i < gfeVals.length; i++) {
+    const mat = gfeVals[i][0];
+    const sea = gfeVals[i][1];
     const key = normalizeKey(mat) + '|' + normalizeKey(sea);
-    if (key !== '|') {
-      lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
+    if (mat !== "" && sea !== "") {
+      lookup[key] = { fa: gfeVals[i][2], disco: gfeVals[i][3] };
     }
   }
 
-    // Read Main used range and data (cols A–F)
-  const usedMainRange = wsMain.getUsedRange();
-  if (!usedMainRange) return;
-  const mainRowCount: number = usedMainRange.getRowCount();
-  const mainRange = wsMain.getRangeByIndexes(0, 0, mainRowCount, MAIN_COL_COUNT);
-  const mainData = mainRange.getValues() as CellVal[][];
+  // Read Main used range
+  const mainUsed = wsMain.getUsedRange();
+  if (!mainUsed) return;
+  const mainRowCount = mainUsed.getRowCount();
 
-  // Copy dates into Main cols E (4) and F (5)
-  for (let r = START_ROW; r < mainData.length; r++) {
-    const matMain = mainData[r][0];
-    const seaMain = mainData[r][1];
+  // Read A–F from Main
+  const mainRange = wsMain.getRangeByIndexes(0, 0, mainRowCount, MAIN_COL_COUNT);
+  const mainVals = mainRange.getValues() as CellVal[][];
+
+  // Copy dates into E-F
+  for (let r = START_ROW; r < mainVals.length; r++) {
+    const matMain = mainVals[r][0];
+    const seaMain = mainVals[r][1];
     const key = normalizeKey(matMain) + '|' + normalizeKey(seaMain);
     const entry = lookup[key];
     if (entry) {
-      mainData[r][4] = entry.fa;
-      mainData[r][5] = entry.disco;
+      mainVals[r][4] = entry.fa;
+      mainVals[r][5] = entry.disco;
     }
   }
 
-  // Write updated values back to Main (A–F)
-  mainRange.setValues(mainData);
+  // Write back only E-F to avoid overwriting entire sheet
+  const outRange = wsMain.getRangeByIndexes(START_ROW, 4, mainVals.length - START_ROW, 2);
+  const outVals = mainVals.slice(START_ROW).map(row => [row[4], row[5]]);
+  outRange.setValues(outVals);
 }
