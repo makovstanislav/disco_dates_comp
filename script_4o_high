@@ -2,10 +2,10 @@
 type CellVal = string | number | boolean | Date;
 
 /**
- * Office Script: Populate Main cols E–F from GFE, ignoring case for Season.
+ * Office Script: Populate Main cols E–F from GFE_Clean, ignoring case and normalizing keys.
  * • Reads Main from row 3 (0-based index 2).
- * • Normalizes Material (trim) and Season (trim + toLowerCase).
- * • Builds lookup from GFE cols A–D.
+ * • Normalizes Material (trim + numeric) and Season (trim + lowercase).
+ * • Builds lookup from GFE_Clean cols A–D.
  * • Copies GFE First Available (col C) → Main col E.
  * • Copies GFE Discontinue    (col D) → Main col F.
  */
@@ -14,47 +14,40 @@ function main(workbook: ExcelScript.Workbook): void {
   const MAIN_COLS: number = 6; // A–F
 
   const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-    // Source worksheet: now from GFE_Clean
-  const wsGFE: ExcelScript.Worksheet = workbook.getWorksheet("GFE_Clean")!;
+  const wsGFE:  ExcelScript.Worksheet = workbook.getWorksheet("GFE_Clean")!;
 
-  // Read GFE data (cols A–D)
-  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
-  const gfeData: CellVal[][] = gfeRange.getValues() as CellVal[][];
-
-  // Build lookup map with lowercased season
-  const lookup: Record<string, { fa: CellVal; disco: CellVal }> = {};
-  for (let i: number = START_ROW; i < gfeData.length; i++) {
-    const matRaw: CellVal = gfeData[i][0];
-    const seaRaw: CellVal = gfeData[i][1];
-    // Normalize material: trim and coerce numeric
-const rawMatStr: string = String(matRaw).trim();
-const matNum: number = Number(rawMatStr);
-const matKey: string = !isNaN(matNum) ? String(matNum) : rawMatStr;
-    const seaKey: string = String(seaRaw).trim().toLowerCase();
-    if (!matKey || !seaKey) continue;
-    lookup[`${matKey}|${seaKey}`] = { fa: gfeData[i][2], disco: gfeData[i][3] };
+  // Normalization helper
+  function normalizeKey(val: CellVal): string {
+    const s: string = String(val).replace(/^'/, '').trim();
+    const n: number = Number(s);
+    return !isNaN(n) ? String(n) : s.toLowerCase();
   }
 
-  // Read Main data (cols A–F)
+  // Build lookup map from GFE_Clean
+  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
+  const gfeData: CellVal[][] = gfeRange.getValues() as CellVal[][];
+  const lookup: Record<string, { fa: CellVal; disco: CellVal }> = {};
+  for (let i = START_ROW; i < gfeData.length; i++) {
+    const key: string = normalizeKey(gfeData[i][0]) + '|' + normalizeKey(gfeData[i][1]);
+    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
+  }
+
+  // Read Main data
   const totalRows: number = wsMain.getUsedRange()!.getRowCount();
   const mainRange: ExcelScript.Range = wsMain.getRangeByIndexes(0, 0, totalRows, MAIN_COLS);
   const mainData: CellVal[][] = mainRange.getValues() as CellVal[][];
 
-  // Populate E (index 4) & F (index 5)
-  for (let r: number = START_ROW; r < mainData.length; r++) {
-    const matRaw: CellVal = mainData[r][0];
-    const seaRaw: CellVal = mainData[r][1];
-    const matKey: string = String(matRaw).trim();
-    const seaKey: string = String(seaRaw).trim().toLowerCase();
-    if (!matKey || !seaKey) continue;
-    const entry = lookup[`${matKey}|${seaKey}`];
+  // Populate E-F
+  for (let r = START_ROW; r < mainData.length; r++) {
+    const key: string = normalizeKey(mainData[r][0]) + '|' + normalizeKey(mainData[r][1]);
+    const entry = lookup[key];
     if (entry) {
       mainData[r][4] = entry.fa;
       mainData[r][5] = entry.disco;
     }
   }
 
-  // Write back only E–F
+  // Write back only E-F
   const writeRange: ExcelScript.Range = wsMain.getRangeByIndexes(START_ROW, 4, mainData.length - START_ROW, 2);
   const writeValues: CellVal[][] = mainData.slice(START_ROW).map((row: CellVal[]) => [row[4], row[5]]);
   writeRange.setValues(writeValues);
