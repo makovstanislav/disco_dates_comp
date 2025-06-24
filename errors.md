@@ -1,8 +1,3 @@
-Line #75: ',' expected.
- range.setNumberFormatLocal([["@", "@"];][0])
+See line 60, column 11: Office Scripts cannot infer the data type of this variable. Please declare a type for the variable.
 
-Line #75: Declaration or statement expected.
- range.setNumberFormatLocal([["@", "@"];][0])
-
-Line #75: ';' expected.
- range.setNumberFormatLocal([["@", "@"];][0])
+See line 114, column 11: Office Scripts cannot infer the data type of this variable. Please declare a type for the variable.
