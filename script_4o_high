@@ -1,0 +1,88 @@
+/**
+ * Copy dates from «GFE» → «Main» and flag changes in G/H.
+ * • Works from row 3 (0-based index 2).
+ * • Marks "Y" when First Available or Discontinue dates differ.
+ * • All variables and functions have explicit types.
+ */
+
+// Helper: normalize cell value to comparable primitive
+function normalizeValue(value: ExcelScript.CellValue): string | number {
+  if (value === "" || value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "number") {
+    return value; // Excel serial number
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  return String(value).trim();
+}
+
+// Helper: compare two cell values as dates or blanks
+function datesEqualValue(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
+  const normA: string | number = normalizeValue(a);
+  const normB: string | number = normalizeValue(b);
+  return normA === normB;
+}
+
+function main(workbook: ExcelScript.Workbook): void {
+  const START_ROW: number = 2;
+  const wsMain: ExcelScript.Worksheet | undefined = workbook.getWorksheet("Main");
+  const wsGFE: ExcelScript.Worksheet | undefined = workbook.getWorksheet("GFE");
+  if (!wsMain || !wsGFE) {
+    return;
+  }
+
+  const gfeRange: ExcelScript.Range | undefined = wsGFE.getUsedRange();
+  if (!gfeRange) {
+    return;
+  }
+  const gfeData: ExcelScript.CellValue[][] = gfeRange.getValues() as ExcelScript.CellValue[][];
+
+  interface DatesPair { fa: ExcelScript.CellValue; disco: ExcelScript.CellValue; }
+  const lookup: { [key: string]: DatesPair } = {};
+
+  for (let rowIndex: number = START_ROW; rowIndex < gfeData.length; rowIndex++) {
+    const materialKey: string = String(gfeData[rowIndex][0]);
+    const seasonKey: string = String(gfeData[rowIndex][1]);
+    if (!materialKey || !seasonKey) {
+      continue;
+    }
+    const mapKey: string = materialKey + "|" + seasonKey;
+    lookup[mapKey] = { fa: gfeData[rowIndex][2], disco: gfeData[rowIndex][3] };
+  }
+
+  const mainRange: ExcelScript.Range | undefined = wsMain.getUsedRange();
+  if (!mainRange) {
+    return;
+  }
+  const mainData: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
+
+  for (let rowIndex: number = START_ROW; rowIndex < mainData.length; rowIndex++) {
+    const matCellValue: string = String(mainData[rowIndex][0]);
+    const seasonCellValue: string = String(mainData[rowIndex][1]);
+    if (!matCellValue || !seasonCellValue) {
+      continue;
+    }
+    const lookupKey: string = matCellValue + "|" + seasonCellValue;
+    const foundDates: DatesPair | undefined = lookup[lookupKey];
+    if (!foundDates) {
+      continue;
+    }
+
+    // Copy dates
+    mainData[rowIndex][4] = foundDates.fa;
+    mainData[rowIndex][5] = foundDates.disco;
+
+    // Flag changes
+    if (!datesEqualValue(mainData[rowIndex][2], foundDates.fa)) {
+      mainData[rowIndex][6] = "Y";
+    }
+    if (!datesEqualValue(mainData[rowIndex][3], foundDates.disco)) {
+      mainData[rowIndex][7] = "Y";
+    }
+  }
+
+  mainRange.setValues(mainData);
+}
