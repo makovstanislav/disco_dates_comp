@@ -1,0 +1,98 @@
+// Define strict cell type for inference
+type CellVal = string | number | boolean | Date;
+
+/**
+ * Office Script: Normalize GFE sheet.
+ * • Reads rows starting at row 3 (zero-based index 2) to last used row.
+ * • Column A: removes leading apostrophes, trims, converts numeric strings to numbers.
+ * • Column B: trims and converts to upper-case.
+ * • Columns C-D: parses string dates and Excel serials into JS Date, formats as "MM/DD/YYYY".
+ * • Writes results back into the GFE sheet.
+ */
+function main(workbook: ExcelScript.Workbook): void {
+  const SHEET_NAME = "GFE";
+  const START_ROW = 2;  // row 3
+  const COL_AB = 2;     // starting at A (0) for two columns A-B
+  const COL_CD = 2;     // two columns C-D
+  const DATE_START_COL = 2; // C index
+
+  // Helpers
+  function excelSerialToDate(serial: number): Date {
+    const offset = serial > 60 ? serial - 1 : serial;
+    const epoch = new Date(Date.UTC(1899, 11, 31));
+    return new Date(epoch.getTime() + offset * 86400000);
+  }
+
+  function formatDate(d: Date): string {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  }
+
+  // Get sheet and used range
+  const ws = workbook.getWorksheet(SHEET_NAME);
+  if (!ws) return;
+  const used = ws.getUsedRange();
+  if (!used) return;
+
+  const totalRows: number = used.getRowCount();
+  const rowsToProcess: number = totalRows - START_ROW;
+  if (rowsToProcess <= 0) return;
+
+  // Read raw A-D
+  const rawRange = ws.getRangeByIndexes(START_ROW, 0, rowsToProcess, 4);
+  const rawValues: CellVal[][] = rawRange.getValues() as CellVal[][];
+
+  // Prepare output
+  const out: (string | number)[][] = [];
+  for (let i = 0; i < rawValues.length; i++) {
+    // Material (A)
+    let mat = rawValues[i][0];
+    if (typeof mat === 'string') {
+      const txt = mat.replace(/^'/, '').trim();
+      const num = Number(txt);
+      mat = !isNaN(num) ? num : txt;
+    }
+
+    // Season (B)
+    let sea = rawValues[i][1];
+    if (typeof sea === 'string') {
+      sea = sea.trim().toUpperCase();
+    }
+
+    // First Available (C)
+    let faRaw = rawValues[i][2];
+    let faOut = "";
+    let faDate: Date | null = null;
+    if (typeof faRaw === 'number') {
+      faDate = excelSerialToDate(faRaw);
+    } else if (faRaw instanceof Date) {
+      faDate = faRaw;
+    } else if (typeof faRaw === 'string' && faRaw.trim() !== "") {
+      const d = new Date(faRaw as string);
+      if (!isNaN(d.getTime())) faDate = d;
+    }
+    if (faDate) faOut = formatDate(faDate);
+
+    // Discontinue (D)
+    let diRaw = rawValues[i][3];
+    let diOut = "";
+    let diDate: Date | null = null;
+    if (typeof diRaw === 'number') {
+      diDate = excelSerialToDate(diRaw);
+    } else if (diRaw instanceof Date) {
+      diDate = diRaw;
+    } else if (typeof diRaw === 'string' && diRaw.trim() !== "") {
+      const d2 = new Date(diRaw as string);
+      if (!isNaN(d2.getTime())) diDate = d2;
+    }
+    if (diDate) diOut = formatDate(diDate);
+
+    out.push([mat, sea, faOut, diOut]);
+  }
+
+  // Write normalized A-D
+  rawRange.setNumberFormatLocal(new Array(rowsToProcess).fill(["General","General","@","@"]));
+  rawRange.setValues(out);
+}
