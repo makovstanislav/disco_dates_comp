@@ -1,13 +1,17 @@
 /**
- * Copy dates from «GFE» → «Main» and flag changes in G/H.
+ * Office Script: synchronize dates from “GFE” to “Main” and flag changes.
+ *
  * • Starts at row 3 (0-based index 2).
- * • Copies FA/Disco dates into Main cols E/F.
- * • Writes "Y" in Main cols G/H if dates differ.
- * • All variables and functions have explicit types.
+ * • Copies First Available / Discontinue dates into Main cols E/F.
+ * • Marks “Y” in Main cols G/H when dates differ.
+ * • Uses explicit CellVal union type for all cell values.
  */
 
-// Normalize any cell value to a primitive (string | number) for comparison
-function normalizeValue(value: ExcelScript.CellValue): string | number {
+// Define explicit cell value type
+type CellVal = string | number | boolean | Date;
+
+// Normalize any CellVal to a primitive (string|number)
+function normalizeValue(value: CellVal): string | number {
   if (value === "" || value === null || value === undefined) {
     return "";
   }
@@ -20,67 +24,56 @@ function normalizeValue(value: ExcelScript.CellValue): string | number {
   return String(value).trim();
 }
 
-// Compare two cell values (as dates or blanks)
-function datesEqualValue(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
+// Compare two CellVal values
+function datesEqualValue(a: CellVal, b: CellVal): boolean {
   const normA: string | number = normalizeValue(a);
   const normB: string | number = normalizeValue(b);
   return normA === normB;
 }
 
-// Main entry point
+// Main function
 function main(workbook: ExcelScript.Workbook): void {
-  const START_ROW: number = 2; // row 3 in Excel
+  const START_ROW: number = 2;
 
-  // Получаем листы (non-null assertion)
-  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-  const wsGFE: ExcelScript.Worksheet  = workbook.getWorksheet("GFE")!;
+  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main") as ExcelScript.Worksheet;
+  const wsGFE: ExcelScript.Worksheet  = workbook.getWorksheet("GFE")  as ExcelScript.Worksheet;
 
-  // Читаем GFE
-  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange()!;
-  const gfeData: ExcelScript.CellValue[][] = gfeRange.getValues() as ExcelScript.CellValue[][];
+  // Read GFE
+  const gfeRange: ExcelScript.Range = wsGFE.getUsedRange() as ExcelScript.Range;
+  const gfeData: CellVal[][]       = gfeRange.getValues() as CellVal[][];
 
-  // Тип для хранения пар дат
-  interface DatesPair { fa: ExcelScript.CellValue; disco: ExcelScript.CellValue; }
+  // Build lookup map
+  interface DatesPair { fa: CellVal; disco: CellVal; }
   const lookup: Record<string, DatesPair> = {};
-
-  // Строим словарь «материал|сезон» → даты
-  for (let rowIndex: number = START_ROW; rowIndex < gfeData.length; rowIndex++) {
-    const materialKey: string = String(gfeData[rowIndex][0]);
-    const seasonKey: string   = String(gfeData[rowIndex][1]);
-    if (materialKey === "" || seasonKey === "") continue;
-    const key: string = `${materialKey}|${seasonKey}`;
-    lookup[key] = {
-      fa:    gfeData[rowIndex][2],
-      disco: gfeData[rowIndex][3]
-    };
+  for (let i: number = START_ROW; i < gfeData.length; i++) {
+    const mat: string = String(gfeData[i][0]);
+    const sea: string = String(gfeData[i][1]);
+    if (mat === "" || sea === "") continue;
+    lookup[`${mat}|${sea}`] = { fa: gfeData[i][2], disco: gfeData[i][3] };
   }
 
-  // Читаем Main
-  const mainRange: ExcelScript.Range = wsMain.getUsedRange()!;
-  const mainData: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
+  // Read Main
+  const mainRange: ExcelScript.Range = wsMain.getUsedRange() as ExcelScript.Range;
+  const mainData: CellVal[][]       = mainRange.getValues() as CellVal[][];
 
-  // Обрабатываем строки Main
-  for (let rowIndex: number = START_ROW; rowIndex < mainData.length; rowIndex++) {
-    const materialKey: string = String(mainData[rowIndex][0]);
-    const seasonKey: string   = String(mainData[rowIndex][1]);
-    if (materialKey === "" || seasonKey === "") continue;
-    const key: string = `${materialKey}|${seasonKey}`;
-    const dates: DatesPair | undefined = lookup[key];
-    if (!dates) continue;
+  // Process Main rows
+  for (let i: number = START_ROW; i < mainData.length; i++) {
+    const mat: string = String(mainData[i][0]);
+    const sea: string = String(mainData[i][1]);
+    if (mat === "" || sea === "") continue;
+    const key: string = `${mat}|${sea}`;
+    const dp: DatesPair | undefined = lookup[key];
+    if (!dp) continue;
 
-    // Копируем даты в столбцы E (index 4) и F (index 5)
-    mainData[rowIndex][4] = dates.fa;
-    mainData[rowIndex][5] = dates.disco;
+    // Copy dates to E (4) and F (5)
+    mainData[i][4] = dp.fa;
+    mainData[i][5] = dp.disco;
 
-    // Флаг «Y» в G/H (индексы 6/7), если даты отличаются
-    if (!datesEqualValue(mainData[rowIndex][2], dates.fa)) {
-      mainData[rowIndex][6] = "Y";
-    }
-    if (!datesEqualValue(mainData[rowIndex][3], dates.disco)) {
-      mainData[rowIndex][7] = "Y";
-    }
+    // Flag changes G (6) and H (7)
+    if (!datesEqualValue(mainData[i][2], dp.fa))   mainData[i][6] = "Y";
+    if (!datesEqualValue(mainData[i][3], dp.disco)) mainData[i][7] = "Y";
   }
 
-  // Записываем результат обратно
+  // Write back
   mainRange.setValues(mainData);
 }
