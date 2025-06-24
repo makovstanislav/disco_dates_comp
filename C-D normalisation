@@ -1,25 +1,30 @@
 /**
- * Office Script: Normalize columns C (First Available Date) and D (Discontinue Date) on sheet "Main".
- * • Starts from row 3 (zero-based index 2) to last used row.
- * • Column C and D: 
- *    - If string, attempts to parse as date; invalid strings become empty.
- *    - If number, treats as Excel serial date and converts to JS Date.
- *    - Leaves Date objects as-is.
+ * Office Script: Normalize and format columns C-D on sheet "Main".
+ * • Reads rows starting at row 3 (zero-based index 2) to last used row.
+ * • Parses string dates and Excel serials into JS Date.
+ * • Formats dates as "MM/DD/YYYY" with leading zeros.
  */
 function main(workbook: ExcelScript.Workbook): void {
   const SHEET_NAME = "Main";
-  const START_ROW = 2;     // row 3
-  const COL_START = 2;      // column C index
-  const COL_COUNT = 2;      // C and D
+  const START_ROW = 2;   // row 3
+  const COL_START = 2;    // column C index
+  const COL_COUNT = 2;    // C and D
 
-  // Excel serial to JS Date converter (handles Excel leap year bug)
+  // Convert Excel serial to JS Date
   function excelSerialToDate(serial: number): Date {
     const offset = serial > 60 ? serial - 1 : serial;
     const epoch = new Date(Date.UTC(1899, 11, 31));
     return new Date(epoch.getTime() + offset * 86400000);
   }
 
-  // Get sheet and range
+  // Format JS Date to "MM/DD/YYYY"
+  function formatDate(d: Date): string {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  }
+
   const ws = workbook.getWorksheet(SHEET_NAME);
   if (!ws) return;
   const used = ws.getUsedRange();
@@ -31,31 +36,42 @@ function main(workbook: ExcelScript.Workbook): void {
 
   // Read raw values from columns C-D
   const range = ws.getRangeByIndexes(START_ROW, COL_START, rowsToProcess, COL_COUNT);
-  const values = range.getValues() as (string | number | boolean | Date)[][];
+  const values = range.getValues() as (string | number | Date)[][];
 
-  // Normalize each
+  // Normalize and format each
+  const out: string[][] = [];
   for (let i = 0; i < values.length; i++) {
-    // First Available Date
-    let fa = values[i][0];
-    if (typeof fa === "string") {
-      const d = new Date(fa);
-      fa = isNaN(d.getTime()) ? "" : d;
-    } else if (typeof fa === "number") {
-      fa = excelSerialToDate(fa);
+    let rowOut: string[] = ["", ""];
+    // First Available (col 0)
+    const faRaw = values[i][0];
+    let faDate: Date | null = null;
+    if (typeof faRaw === 'number') {
+      faDate = excelSerialToDate(faRaw);
+    } else if (faRaw instanceof Date) {
+      faDate = faRaw;
+    } else if (typeof faRaw === 'string' && faRaw.trim() !== "") {
+      const dt = new Date(faRaw);
+      if (!isNaN(dt.getTime())) faDate = dt;
     }
-    values[i][0] = fa;
+    rowOut[0] = faDate ? formatDate(faDate) : "";
 
-    // Discontinue Date
-    let disco = values[i][1];
-    if (typeof disco === "string") {
-      const d2 = new Date(disco);
-      disco = isNaN(d2.getTime()) ? "" : d2;
-    } else if (typeof disco === "number") {
-      disco = excelSerialToDate(disco);
+    // Discontinue (col 1)
+    const discoRaw = values[i][1];
+    let discoDate: Date | null = null;
+    if (typeof discoRaw === 'number') {
+      discoDate = excelSerialToDate(discoRaw);
+    } else if (discoRaw instanceof Date) {
+      discoDate = discoRaw;
+    } else if (typeof discoRaw === 'string' && discoRaw.trim() !== "") {
+      const dt2 = new Date(discoRaw);
+      if (!isNaN(dt2.getTime())) discoDate = dt2;
     }
-    values[i][1] = disco;
+    rowOut[1] = discoDate ? formatDate(discoDate) : "";
+
+    out.push(rowOut);
   }
 
-  // Write back normalized dates
-  range.setValues(values);
+  // Write formatted strings back to C-D
+  range.setNumberFormatLocal([["@","@"];][0]);
+  range.setValues(out);
 }
