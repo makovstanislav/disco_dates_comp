@@ -36,8 +36,11 @@ function main(workbook: ExcelScript.Workbook): void {
     }
   }
 
-  // Read Main data (cols A–F)
-  const mainRange = wsMain.getRangeByIndexes(0, 0, wsMain.getUsedRange()!.getRowCount(), MAIN_COL_COUNT);
+    // Read Main used range and data (cols A–F)
+  const usedMainRange = wsMain.getUsedRange();
+  if (!usedMainRange) return;
+  const mainRowCount: number = usedMainRange.getRowCount();
+  const mainRange = wsMain.getRangeByIndexes(0, 0, mainRowCount, MAIN_COL_COUNT);
   const mainData = mainRange.getValues() as CellVal[][];
 
   // Copy dates into Main cols E (4) and F (5)
