@@ -1,0 +1,57 @@
+// Define strict cell type for inference
+type CellVal = string | number | boolean | Date;
+
+/**
+ * Office Script: Copy First Available and Discontinue dates from GFE to Main (cols E–F).
+ * • Reads Main rows starting at row 3 (zero-based index 2).
+ * • Normalizes Material and Season (trim + lowercase).
+ * • Builds lookup from GFE cols A–D.
+ * • Copies GFE C→Main E and GFE D→Main F when keys match.
+ */
+function main(workbook: ExcelScript.Workbook): void {
+  const START_ROW: number = 2;
+  const MAIN_COL_COUNT: number = 6; // A–F
+
+  // Helper: normalize key by trimming and lower-casing
+  function normalizeKey(val: CellVal): string {
+    return String(val).trim().toLowerCase();
+  }
+
+  // Worksheets
+  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
+  const wsGfe:  ExcelScript.Worksheet = workbook.getWorksheet("GFE")!;
+
+  // Read GFE data (cols A–D)
+  const gfeRange = wsGfe.getRange("A:D");
+  const gfeData = gfeRange.getValues() as CellVal[][];
+
+  // Build lookup map: "mat|sea" → {fa, disco}
+  const lookup: Record<string, {fa: CellVal; disco: CellVal}> = {};
+  for (let i = START_ROW; i < gfeData.length; i++) {
+    const mat = gfeData[i][0];
+    const sea = gfeData[i][1];
+    const key = normalizeKey(mat) + '|' + normalizeKey(sea);
+    if (key !== '|') {
+      lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
+    }
+  }
+
+  // Read Main data (cols A–F)
+  const mainRange = wsMain.getRangeByIndexes(0, 0, wsMain.getUsedRange()!.getRowCount(), MAIN_COL_COUNT);
+  const mainData = mainRange.getValues() as CellVal[][];
+
+  // Copy dates into Main cols E (4) and F (5)
+  for (let r = START_ROW; r < mainData.length; r++) {
+    const matMain = mainData[r][0];
+    const seaMain = mainData[r][1];
+    const key = normalizeKey(matMain) + '|' + normalizeKey(seaMain);
+    const entry = lookup[key];
+    if (entry) {
+      mainData[r][4] = entry.fa;
+      mainData[r][5] = entry.disco;
+    }
+  }
+
+  // Write updated values back to Main (A–F)
+  mainRange.setValues(mainData);
+}
