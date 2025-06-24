@@ -1,0 +1,47 @@
+// Define strict cell type for inference
+type CellVal = string | number | boolean | Date;
+
+/**
+ * Office Script: Flag changes in Main col G (isChanged_First).
+ * • Reads Main starting at row 3 (zero-based index 2).
+ * • Compares First Available (col C) vs GFE – First Available (col E).
+ * • If not equal (by value or date), writes "Y" in col G; else leaves blank.
+ */
+function main(workbook: ExcelScript.Workbook): void {
+  const START_ROW: number = 2;   // row 3
+  const SHEET = "Main";
+
+  // Helper to convert cell value to comparable millisecond or empty string
+  function toMillis(val: CellVal): number | "" {
+    if (val === null || val === undefined || val === "") return "";
+    if (val instanceof Date) return val.getTime();
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? "" : d.getTime();
+    }
+    return "";
+  }
+
+  const ws = workbook.getWorksheet(SHEET);
+  if (!ws) return;
+  const used = ws.getUsedRange();
+  if (!used) return;
+
+  const rowCount = used.getRowCount();
+  // Read columns C, E
+  const range = ws.getRangeByIndexes(START_ROW, 2, rowCount - START_ROW, 5); // cols C (2) through G (6)
+  const vals = range.getValues() as CellVal[][];
+
+  // Prepare output for col G
+  const out: string[][] = [];
+  for (let i = 0; i < vals.length; i++) {
+    const original = toMillis(vals[i][0]);   // C
+    const fromGFE  = toMillis(vals[i][2]);   // E at offset 2
+    out.push([ original !== fromGFE ? "Y" : "" ]);
+  }
+
+  // Write back to col G (index 6)
+  const target = ws.getRangeByIndexes(START_ROW, 6, out.length, 1);
+  target.setValues(out);
+}
