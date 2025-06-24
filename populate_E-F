@@ -6,7 +6,7 @@ type CellVal = string | number | boolean | Date;
  * marking inactive if Material Status ≠ "ACTIVE".
  * • Reads Main rows starting at row 3 (zero-based index 2).
  * • Normalizes Material and Season as keys (trim + lowercase).
- * • Builds lookup from GFE cols A–E (Material Status in col E).
+ * • Builds lookup from GFE cols A–E (Material Status in col E), starting from row 2 (index 1).
  * • If status ≠ "ACTIVE", writes "INACTIVE" in E-F.
  * • Else parses raw dates, formats as "MM/DD/YYYY" with leading zeros.
  * • Writes formatted strings into Main cols E (4) and F (5).
@@ -47,13 +47,12 @@ function main(workbook: ExcelScript.Workbook): void {
   const wsGfe  = workbook.getWorksheet("GFE");
   if (!wsMain || !wsGfe) return;
 
-  // Build lookup from GFE A–E
+  // Build lookup from GFE A–E, starting row 2
   const gfeUsed = wsGfe.getUsedRange();
   if (!gfeUsed) return;
   const gfeData = gfeUsed.getValues() as CellVal[][];
-  // lookup entry includes status
   const lookup: Record<string, {fa: CellVal; disco: CellVal; status: string}> = {};
-  for (let i = START_ROW; i < gfeData.length; i++) {
+  for (let i = 1; i < gfeData.length; i++) {
     const mat = gfeData[i][0];
     const sea = gfeData[i][1];
     const key = normalizeKey(mat) + '|' + normalizeKey(sea);
@@ -90,7 +89,7 @@ function main(workbook: ExcelScript.Workbook): void {
 
   // Write back formatted E-F as text
   const writeRange = wsMain.getRangeByIndexes(START_ROW, 4, out.length, 2);
-  const fmtMatrix: string[][] = Array(out.length).fill(["@","@"]);
+  const fmtMatrix: string[][] = Array(out.length).fill(["@","@"]); 
   writeRange.setNumberFormatLocal(fmtMatrix);
   writeRange.setValues(out);
 }
