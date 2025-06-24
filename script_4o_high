@@ -1,30 +1,23 @@
 /**
- * Office Script: synchronize dates from "GFE" to "Main" and flag changes.
+ * Office Script: synchronize dates from GFE to Main and flag changes.
  *
  * • Starts at row 3 (0-based index 2).
  * • Copies First Available / Discontinue dates into Main cols E/F.
  * • Marks "Y" in Main cols G/H when dates differ.
- * • All parameters, variables, and functions use explicit ExcelScript types.
  */
 
-// Excel date serial to JS milliseconds (accounts for 1900 leap year bug)
+// Convert Excel serial date to JS milliseconds (handles 1900 leap year bug)
 function excelSerialToMillis(serial: number): number {
-  const serialDays: number = serial > 60 ? serial - 1 : serial;
+  const offsetDays: number = serial > 60 ? serial - 1 : serial;
   const epoch: Date = new Date(Date.UTC(1899, 11, 31));
-  return epoch.getTime() + serialDays * 86400000;
+  return epoch.getTime() + offsetDays * 24 * 60 * 60 * 1000;
 }
 
-// Convert ExcelScript.CellValue to milliseconds for comparison
+// Convert any cell value to milliseconds (or undefined if blank/non-date)
 function toMillis(value: ExcelScript.CellValue): number | undefined {
-  if (value === "" || value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value === "number") {
-    return excelSerialToMillis(value);
-  }
-  if (value instanceof Date) {
-    return value.getTime();
-  }
+  if (value === null || value === undefined || value === "") return undefined;
+  if (typeof value === "number") return excelSerialToMillis(value);
+  if (value instanceof Date) return value.getTime();
   if (typeof value === "string") {
     const dt: Date = new Date(value);
     return isNaN(dt.getTime()) ? undefined : dt.getTime();
@@ -32,80 +25,57 @@ function toMillis(value: ExcelScript.CellValue): number | undefined {
   return undefined;
 }
 
-// Compare two ExcelScript.CellValue values (dates or blanks)
+// Compare two cell values as dates or blanks
 function datesEqual(a: ExcelScript.CellValue, b: ExcelScript.CellValue): boolean {
-  const msA: number | undefined = toMillis(a);
-  const msB: number | undefined = toMillis(b);
-  if (msA === undefined && msB === undefined) {
-    return true;
-  }
+  const msA = toMillis(a);
+  const msB = toMillis(b);
+  if (msA === undefined && msB === undefined) return true;
   return msA !== undefined && msB !== undefined && msA === msB;
 }
 
+// Main script
 function main(workbook: ExcelScript.Workbook): void {
   const START_ROW: number = 2;
+  const wsMain = workbook.getWorksheet("Main")!;
+  const wsGFE = workbook.getWorksheet("GFE")!;
 
-  const wsMain: ExcelScript.Worksheet = workbook.getWorksheet("Main")!;
-  const wsGFE: ExcelScript.Worksheet  = workbook.getWorksheet("GFE")!;
+  // Read GFE data
+  const gfeRange = wsGFE.getUsedRange()!;
+  const gfeData = gfeRange.getValues() as ExcelScript.CellValue[][];
 
-  const gfeRange: ExcelScript.Range          = wsGFE.getUsedRange()!;
-  const gfeData: ExcelScript.CellValue[][] = gfeRange.getValues() as ExcelScript.CellValue[][];
-
+  // Build lookup by "material|season"
   interface DatesPair { fa: ExcelScript.CellValue; disco: ExcelScript.CellValue; }
   const lookup: Record<string, DatesPair> = {};
-
-  for (let i: number = START_ROW; i < gfeData.length; i++) {
-    const rawMat: ExcelScript.CellValue = gfeData[i][0];
-    const rawSea: ExcelScript.CellValue = gfeData[i][1];
-    const matKey: string = String(rawMat);
-    const seaKey: string = String(rawSea);
-    if (matKey === "" || seaKey === "") continue;
-    const key: string = matKey + "|" + seaKey;
-    lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
-  }|${seaKey}`;
+  for (let i = START_ROW; i < gfeData.length; i++) {
+    const mat = gfeData[i][0];
+    const sea = gfeData[i][1];
+    if (!mat || !sea) continue;
+    const key = `${mat}|${sea}`;
     lookup[key] = { fa: gfeData[i][2], disco: gfeData[i][3] };
   }
 
-  const mainRange: ExcelScript.Range          = wsMain.getUsedRange()!;
-  const mainData: ExcelScript.CellValue[][] = mainRange.getValues() as ExcelScript.CellValue[][];
+  // Read Main data
+  const mainRange = wsMain.getUsedRange()!;
+  const mainData = mainRange.getValues() as ExcelScript.CellValue[][];
 
-  for (let j: number = START_ROW; j < mainData.length; j++) {
-    const rawMat: ExcelScript.CellValue = mainData[j][0];
-    const rawSea: ExcelScript.CellValue = mainData[j][1];
-    const matStr: string = String(rawMat);
-    const seaStr: string = String(rawSea);
-    if (matStr === "" || seaStr === "") continue;
-    const key: string = matStr + "|" + seaStr;
-    const dp: DatesPair | undefined = lookup[key];
+  // Update Main rows
+  for (let i = START_ROW; i < mainData.length; i++) {
+    const mat = mainData[i][0];
+    const sea = mainData[i][1];
+    if (!mat || !sea) continue;
+    const key = `${mat}|${sea}`;
+    const dp = lookup[key];
     if (!dp) continue;
 
-    // Copy dates to cols E (4) and F (5)
-    mainData[j][4] = dp.fa;
-    mainData[j][5] = dp.disco;
+    // Copy dates
+    mainData[i][4] = dp.fa;
+    mainData[i][5] = dp.disco;
 
-    // Flag changes in G (6) and H (7)
-    if (!datesEqual(mainData[j][2], dp.fa)) {
-      mainData[j][6] = "Y";
-    }
-    if (!datesEqual(mainData[j][3], dp.disco)) {
-      mainData[j][7] = "Y";
-    }
-  }|${seaVal}`;
-    const dp: DatesPair | undefined = lookup[key];
-    if (!dp) continue;
-
-    // Copy dates to cols E (4) and F (5)
-    mainData[j][4] = dp.fa;
-    mainData[j][5] = dp.disco;
-
-    // Flag changes in G (6) and H (7)
-    if (!datesEqual(mainData[j][2], dp.fa)) {
-      mainData[j][6] = "Y";
-    }
-    if (!datesEqual(mainData[j][3], dp.disco)) {
-      mainData[j][7] = "Y";
-    }
+    // Flag changes
+    if (!datesEqual(mainData[i][2], dp.fa)) mainData[i][6] = "Y";
+    if (!datesEqual(mainData[i][3], dp.disco)) mainData[i][7] = "Y";
   }
 
+  // Write back to Main
   mainRange.setValues(mainData);
 }
